@@ -1,0 +1,26 @@
+{
+  "name": "master-r2-back",
+  "version": "1.0.0",
+  "description": "Master R2 backend — Bulldozer Collective",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "npx knex migrate:latest",
+    "migrate:rollback": "npx knex migrate:rollback",
+    "seed": "npx knex seed:run",
+    "test": "node --test --test-concurrency=1 tests/**/*.test.js",
+    "test:setup": "npx knex migrate:latest --env test && npx knex seed:run --env test"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "knex": "^3.2.9",
+    "pg": "^8.20.0",
+    "supertest": "^7.2.2"
+  }
+}
