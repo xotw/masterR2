@@ -1,0 +1,2154 @@
+<!DOCTYPE html>
+<!-- =======================================================================
+     NOUVEAU.HTML — Formulaire de création / édition d'une présentation R2
+     =====================================================================
+     Fichier principal de l'application. Gère le workflow complet de
+     création d'une présentation commerciale R2 pour Bulldozer Collective.
+
+     ARCHITECTURE :
+     - App React 18 en mode SPA (Single Page Application)
+     - 4 étapes (steps) séquentielles :
+       1. Client    — Saisie du nom, URL, Claap R1, Business Partner
+       2. Leviers   — Sélection des leviers (SEO, GEO, CRO, Ads) et slides
+       3. Review    — Relecture Tinder-style card par card, édition, regénération
+       4. Canva     — Injection dans la présentation Canva avec diff visuel
+     - Persistance via localStorage (clé STORAGE_KEY, partagée avec index.html)
+     - Navigation clavier : flèches (next/prev), Entrée (valider), Escape (dashboard), Backspace (retour)
+
+     DONNÉES :
+     - Les présentations sont stockées dans localStorage sous forme de tableau JSON
+     - Chaque prez contient : infos client, leviers actifs, analyses par levier,
+       contextSummary, slides actives/inactives, URLs Canva/Claap
+     - Le seed initial est dans index.html (SEED), ce fichier le lit/écrit via loadAll/saveAll
+
+     DÉPENDANCES :
+     - React 18 (CDN) + ReactDOM + Babel (transpilation JSX dans le navigateur)
+     - Clearbit Logo API (récupération des logos clients via leur domaine)
+     - Images thumbnails dans le dossier slides-thumbs/
+     ======================================================================= -->
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<link rel="icon" type="image/png" href="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Nouvelle présentation R2 — Bulldozer</title>
+
+<!-- React 18 en mode développement + Babel pour transpiler le JSX inline -->
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* ── Design tokens Bulldozer ──────────────────────────────────────────────
+     Palette sombre avec accent jaune-vert (#D4FF00) — identité Bulldozer.
+     Tous les composants utilisent ces variables pour garantir la cohérence. */
+  :root {
+    --bg:        #303028;    /* Fond principal */
+    --bg-nav:    #252523;    /* Fond de la sidebar et des footers */
+    --bg-card:   #363632;    /* Fond des cartes et encadrés */
+    --bg-input:  #3C3C38;    /* Fond des champs de saisie */
+    --bg-hover:  #3A3A36;    /* Fond au survol des lignes */
+    --border:    #484844;    /* Bordures générales */
+    --text:      #F2F2F7;    /* Texte principal (blanc cassé) */
+    --text-2:    #AEAEB2;    /* Texte secondaire (gris clair) */
+    --text-3:    #6E6E73;    /* Texte tertiaire (gris foncé) */
+    --accent:    #D4FF00;    /* Couleur accent Bulldozer (jaune-vert) */
+    --accent-h:  #B8E600;    /* Accent au hover (légèrement plus foncé) */
+    --accent-bg: rgba(212,255,0,0.06); /* Fond subtil accent */
+    --error:     #FF453A;    /* Rouge erreur / suppression */
+    --warning:   #FF9F0A;    /* Orange avertissement / en cours */
+    --success:   #32D74B;    /* Vert succès / validé */
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui,-apple-system,'Segoe UI',sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, .nav-title, .top-title, .section-title, .stat-val, .nav-brand { font-family: 'Inconsolata',monospace; }
+  ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  a { text-decoration: none; color: inherit; }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea, select { font-family: inherit; }
+
+  /* ── Inputs ─────────────────────────────────────────────────────────────
+     Champs de saisie (texte, textarea, range) avec style uniforme */
+  .inp {
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 8px 12px; font-size: 14px; width: 100%; outline: none;
+    transition: border-color 0.15s;
+  }
+  .inp:focus { border-color: var(--accent); }
+  .inp::placeholder { color: var(--text-3); }
+  textarea.inp { resize: vertical; }
+  input[type="range"] {
+    -webkit-appearance: none; background: transparent; border: none; padding: 0; height: 20px; width: 100%;
+  }
+  input[type="range"]::-webkit-slider-track { background: #38383A; height: 4px; border-radius: 2px; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: var(--accent); border-radius: 50%; margin-top: -7px; }
+
+  /* ── Boutons — taille unifiée sur toute l'app ───────────────────────────
+     3 variantes visuelles, mêmes dimensions (14px, padding 8px 16px) :
+     - .btn-p : primaire (fond accent jaune, texte noir) — actions principales
+     - .btn-s : secondaire (outline accent) — actions alternatives
+     - .btn-g : ghost (outline gris) — retour, annuler, actions mineures */
+  .btn-p, .btn-s, .btn-g {
+    border-radius: 6px; padding: 8px 16px; font-size: 14px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s;
+    white-space: nowrap; cursor: pointer; border: none;
+  }
+  .btn-p { background: var(--accent); color: #000; }
+  .btn-p:hover { background: var(--accent-h); }
+  .btn-p:disabled { background: #2C2C2E; color: var(--text-3); cursor: not-allowed; }
+  .btn-s { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .btn-s:hover { background: var(--accent-bg); }
+  .btn-g { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+  .btn-g:hover { border-color: #4A4A4C; color: var(--text); }
+
+  /* ── Layout principal ────────────────────────────────────────────────────
+     Structure : sidebar gauche (300px) + zone principale (flex:1).
+     Toute l'app tient dans 100vh sans scroll sur le shell. */
+  .shell { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── Sidebar (navigation latérale gauche) ──────────────────────────────
+     Affiche : logo, lien retour, étapes du workflow, bouton JSON, statut */
+  .sidebar {
+    width: 300px; flex-shrink: 0; background: var(--bg-nav);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    height: 100vh;
+  }
+  .sb-logo { padding: 18px 16px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); }
+  .sb-logo-img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+  .sb-back { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text-3); padding: 8px 14px; margin: 8px 8px; border-radius: 7px; transition: all 0.12s; }
+  .sb-back:hover { color: var(--text); background: var(--bg-hover); }
+  .sb-steps { padding: 10px; flex: 1; overflow-y: auto; }
+  .sb-step { display: flex; gap: 11px; padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background 0.12s; margin-bottom: 2px; }
+  .sb-step.act { background: var(--accent-bg); }
+  .sb-dot { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; transition: all 0.15s; }
+  .sb-lbl { font-size: 17px; font-weight: 500; padding-top: 3px; }
+  .sb-desc { font-size: 14px; color: var(--text-3); margin-top: 2px; }
+  .sb-bottom { padding: 10px; border-top: 1px solid var(--border); }
+  .sb-draft { font-size: 15px; color: var(--text-3); display: flex; align-items: center; gap: 6px; padding: 5px 5px; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: inline-block; }
+
+  /* ── Zone principale (panneau droit, scrollable) ─────────────────────── */
+  .main { flex: 1; overflow-y: auto; }
+
+  /* ── Helpers de formulaire ──────────────────────────────────────────────
+     .fsec  : section de champ (margin-bottom pour l'espacement entre champs)
+     .flbl  : label de champ (gris clair, 14px)
+     .fhint : texte d'aide sous un champ (gris fonce, petite taille) */
+  .fsec { margin-bottom: 26px; }
+  .flbl { display: block; font-size: 14px; font-weight: 500; color: var(--text-2); margin-bottom: 6px; }
+  .fhint { font-size: 13px; color: var(--text-3); margin-top: 4px; line-height: 1.5; }
+
+  /* ── Pilules de selection (leviers dans Step 1 si non connecte) ─────── */
+  .pills { display: flex; flex-wrap: wrap; gap: 9px; }
+  .pill {
+    padding: 8px 18px; border-radius: 100px; font-size: 18px; font-weight: 600;
+    border: 1.5px solid var(--border); background: transparent; color: var(--text-2);
+    transition: all 0.12s; user-select: none;
+  }
+  .pill:hover { border-color: #4A4A4C; color: var(--text); }
+  .pill.on { background: var(--accent); border-color: var(--accent); color: #000; }
+
+  /* ── Grille de selection de slides (Step 2, colonne droite) ──────────
+     Grille 3 colonnes avec des cartes cochables/decochables.
+     .selected : bordure accent + fond subtil quand la slide est active.
+     .locked : curseur desactive pour les slides obligatoires (non decochables). */
+  .slides-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .slide-card {
+    background: var(--bg-card); border: 1.5px solid var(--border); border-radius: 10px;
+    padding: 18px 16px; cursor: pointer; transition: all 0.15s; user-select: none;
+    display: flex; flex-direction: column; gap: 9px;
+    position: relative;
+  }
+  .slide-card:hover:not(.locked) { border-color: #4A4A4C; background: var(--bg-hover); }
+  .slide-card.selected { border-color: var(--accent); background: var(--accent-bg); }
+  .slide-card.locked { cursor: default; opacity: 0.9; }
+  .slide-card.selected.locked { border-color: rgba(212,255,0,0.4); }
+  .slide-icon { font-size: 26px; }
+  .slide-title { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .slide-desc  { font-size: 15px; color: var(--text-3); line-height: 1.5; }
+  .slide-lock  { position: absolute; top: 11px; right: 11px; font-size: 13px; color: var(--text-3); }
+  .slide-check {
+    position: absolute; top: 11px; right: 11px;
+    width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800; color: #000;
+  }
+
+  /* ── Cards (conteneurs generiques) ───────────────────────────────────
+     Utilisees dans la Review (ContextCard, AnalysisCard) et dans StepCanva
+     (recapitulatif, diff, historique). Fond sombre avec bordure et coins arrondis. */
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 22px; }
+
+  /* ── Score / Sliders de notation ─────────────────────────────────────────
+     Utilisés dans la Review pour noter chaque levier et sous-score (0-10).
+     Slider compact (80px) + input numérique monospace (36px) + badge coloré */
+  .sr-row { display: flex; align-items: center; gap: 6px; }
+  .sr-row input[type="range"] {
+    width: 80px; flex-shrink: 0; -webkit-appearance: none; appearance: none; height: 3px; border-radius: 2px;
+    background: var(--border); outline: none; cursor: pointer;
+  }
+  .sr-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); border: 1.5px solid #000; cursor: pointer;
+  }
+  .sr-row input[type="range"]::-moz-range-thumb {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); border: 1.5px solid #000; cursor: pointer;
+  }
+  .sr-num { width: 36px !important; text-align: center; flex-shrink: 0; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 3px; padding: 2px 4px; font-size: 12px; font-family: "SF Mono","Fira Code",monospace; }
+  .sc-bar { height: 3px; border-radius: 2px; margin-top: 4px; transition: all 0.3s; }
+  .sc-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; font-family: "SF Mono","Fira Code",monospace; white-space: nowrap; }
+
+  /* ── Blocs de code / JSON ────────────────────────────────────────────── */
+  .code-blk { background: #111113; border: 1px solid var(--border); border-radius: 8px; padding: 18px; font-family: "SF Mono","Fira Code",monospace; font-size: 17px; line-height: 1.65; overflow: auto; max-height: 480px; white-space: pre; color: #DDD; }
+
+  /* ── Toast (notification éphémère en bas à droite) ──────────────────── */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg-card); border: 1px solid var(--accent); color: var(--accent); padding: 11px 20px; border-radius: 8px; font-size: 18px; font-weight: 600; z-index: 9999; animation: fadeUp 0.18s ease; }
+  @keyframes fadeUp { from { transform:translateY(8px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+
+  /* ── Barre de progression globale (en haut de la zone principale) ──── */
+  .step-bar { height: 3px; background: var(--border); flex-shrink: 0; }
+  .step-bar-fill { height: 100%; background: var(--accent); transition: width 0.55s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 0 8px rgba(212,255,0,0.5); }
+
+  /* ── Écran de lancement (animation de génération) ───────────────────── */
+  .launch-step { display: flex; gap: 11px; margin-bottom: 11px; align-items: flex-start; }
+  .launch-n { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #000; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .cmd-box { background: #111113; border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; font-family: "SF Mono","Fira Code",monospace; font-size: 17px; line-height: 1.7; color: #CCC; white-space: pre-wrap; word-break: break-all; }
+  .success-box { background: rgba(212,255,0,0.05); border: 1px solid rgba(212,255,0,0.2); border-radius: 10px; padding: 22px; }
+
+  /* ── Animations (barre de progression, dots de chargement) ──────────── */
+  @keyframes scan { 0%{left:-40%} 100%{left:110%} }
+  @keyframes taskIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  .task-row { animation: taskIn 0.25s ease; }
+  .task-bar-wrap { height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; position: relative; margin-top: 8px; }
+  .task-bar-shine { position: absolute; top:0; width: 35%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); animation: scan 1.4s linear infinite; }
+  @keyframes dotPulse { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
+  .dot-loader span { display:inline-block; width:5px; height:5px; border-radius:50%; background:currentColor; margin:0 2px; animation: dotPulse 1.2s ease infinite; }
+  .dot-loader span:nth-child(2){animation-delay:0.2s}
+  .dot-loader span:nth-child(3){animation-delay:0.4s}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+/* ═══════════════════════════════════════════════════════════════════════════
+   JAVASCRIPT / REACT — Logique applicative
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const { useState, useReducer, useContext, createContext, useRef, useEffect, useCallback } = React;
+
+/* ── Clé de persistance localStorage ─────────────────────────────────────
+   Incrémentée à chaque changement de structure du seed (v7→v8, etc.)
+   pour forcer le rechargement des données depuis le SEED d'index.html.
+   Partagée entre index.html, nouveau.html, parametres.html. */
+const STORAGE_KEY = 'master_r2_v12';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONSTANTES MÉTIER — Leviers, slides, couleurs
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Liste des 6 leviers marketing proposés par Bulldozer */
+const LEVERS = ['SEO','GEO','CRO','Google Ads','Meta Ads','LinkedIn Ads'];
+
+/* Classification des leviers en deux familles :
+   - Demand Capture : capter la demande existante (SEO, GEO, Google Ads, CRO)
+   - Demand Gen : générer de la demande nouvelle (Meta Ads, LinkedIn Ads) */
+const DEMAND_CAPTURE = ['SEO', 'GEO', 'Google Ads', 'CRO'];
+const DEMAND_GEN     = ['Meta Ads', 'LinkedIn Ads'];
+
+/* Icônes emoji associées à chaque levier (affichées dans les boutons et tags) */
+const LEVER_ICONS = {
+  'SEO':'🔍', 'GEO':'🤖', 'CRO':'⚡', 'Google Ads':'💰', 'Meta Ads':'📣', 'LinkedIn Ads':'💼',
+};
+
+/* Couleurs (fond + texte) de chaque levier — utilisées partout dans l'app
+   pour les tags, badges, bordures de cards, barres de progression, etc. */
+const LEVER_COLORS = {
+  'SEO':          { bg:'#C8F040', color:'#1C1C1E' },
+  'GEO':          { bg:'#70D8D0', color:'#1C1C1E' },
+  'CRO':          { bg:'#FF9870', color:'#1C1C1E' },
+  'Google Ads':   { bg:'#80C8FF', color:'#1C1C1E' },
+  'Meta Ads':     { bg:'#D0A0FF', color:'#1C1C1E' },
+  'LinkedIn Ads': { bg:'#FFB0C8', color:'#1C1C1E' },
+};
+
+/* Thumbnails de slide pour chaque préaudit levier (1 slide par levier).
+   Référencent les images dans slides-thumbs/ — un fichier par levier. */
+const PREAUDIT_THUMBS = {
+  'SEO':          ['slides-thumbs/14-preaudit-Demand-capture-SEO.png'],
+  'GEO':          ['slides-thumbs/13-preaudit-Demand-capture-GEO.png'],
+  'CRO':          ['slides-thumbs/16-preaudit-Demand-capture-CRO.png'],
+  'Google Ads':   ['slides-thumbs/15-preaudit-Demand-capture-SEA.png'],
+  'Meta Ads':     ['slides-thumbs/20-preaudit-Demand-gen-Meta.png'],
+  'LinkedIn Ads': ['slides-thumbs/21-preaudit-Demand-gen-Linkedin.png'],
+};
+
+/* Slides supplémentaires par levier (en plus du préaudit principal).
+   Ex: CRO ajoute une slide "Quick Wins" avec ses propres thumbnails. */
+const LEVER_EXTRA_SLIDES = {
+  'CRO': [{ suffix:'quick_wins', label:'Quick Wins', thumbs:['slides-thumbs/17-preaudit-Demand-capture-QuickCRO.png'] }],
+};
+
+/* Sous-scores par levier — 5 critères d'évaluation pour chaque levier.
+   Utilisés dans la Review pour afficher les sliders de notation détaillés. */
+const LEVER_SUBSCORES = {
+  'SEO':          ['Visibilité','Trafic','Contenu','Technique','Autorité'],
+  'GEO':          ['Présence IA','Contenu optimisé','Citations','Autorité','Visibilité LLM'],
+  'CRO':          ['Ergonomie','Message','CTA','Réassurance','Opportunités'],
+  'Google Ads':   ['Structure','Mots-clés','Annonces','Landing pages','Performance'],
+  'Meta Ads':     ['Stratégie','Créas','Ciblage','Budget','Performance'],
+  'LinkedIn Ads': ['Stratégie','Créas','Ciblage','Budget','Performance'],
+};
+
+/* ── Sections de slides ────────────────────────────────────────────────────
+   Chaque section correspond à un groupe de slides dans la présentation Canva.
+   - id : identifiant unique (utilisé dans inactiveSections pour décocher)
+   - label : nom affiché dans le sélecteur
+   - thumbs : tableau de chemins vers les thumbnails (images dans slides-thumbs/)
+   - noThumb : true si pas de thumbnail (ex: Use case, choix libre du BP)
+   - desc : description optionnelle affichée à côté du label
+   Les slides préaudit sont dynamiques (générées par levier actif). */
+const SECTIONS = [
+  { id:'disclaimer',    label:'Disclaimer',              thumbs:['slides-thumbs/02-disclaimer.png'] },
+  { id:'pres_bd',       label:'Présentation Bulldozer',  thumbs:['slides-thumbs/03-pres-bulldozer.png','slides-thumbs/04-pres-bulldozer.png','slides-thumbs/05-pres-bulldozer.png','slides-thumbs/06-pres-bulldozer.png','slides-thumbs/07-pres-bulldozer.png'] },
+  { id:'contexte',      label:'Contexte Client',         thumbs:['slides-thumbs/09-contexte.png','slides-thumbs/08-contexte.png'],  desc:'Suite R1' },
+  // Les slides Préaudit sont dynamiques (une par levier sélectionné)
+  { id:'bilan',         label:'Bilan de préaudit',       thumbs:['slides-thumbs/35-bilan.png','slides-thumbs/36-bilan.png'] },
+  { id:'test_traction', label:'Test de traction',        thumbs:['slides-thumbs/22-TDT.png','slides-thumbs/23-TDT.png','slides-thumbs/24-TDT.png','slides-thumbs/25-TDT.png','slides-thumbs/27-TDT.png','slides-thumbs/28-TDT.png','slides-thumbs/29-TDT.png','slides-thumbs/30-TDT.png'] },
+  { id:'plan_action',   label:"Plan d'action",           thumbs:['slides-thumbs/85-plan-action-titre.png','slides-thumbs/86-plan-action-strategie.png'] },
+  { id:'suivi_projet',  label:'Mode de suivi projet',    thumbs:['slides-thumbs/90-suivi-mission.png'] },
+  { id:'equipe',        label:'Équipe',                  thumbs:['slides-thumbs/87-equipe.png'] },
+  { id:'use_case',      label:'Use case',                thumbs:[], noThumb:true },
+  { id:'pricing',       label:'Pricing',                 thumbs:['slides-thumbs/91-pricing.png','slides-thumbs/92-pricing.png'] },
+  { id:'projection',    label:'Projection financière',   thumbs:['slides-thumbs/93-projection-financiere.png'] },
+  { id:'why_bd',        label:'Pourquoi Bulldozer',      thumbs:['slides-thumbs/94-pourquoi-bulldozer-titre.png','slides-thumbs/95-pourquoi-bulldozer.png'] },
+  { id:'next_step',     label:'Next step',               thumbs:['slides-thumbs/96-next-step-titre.png','slides-thumbs/97-lancement.png','slides-thumbs/98-fin.png'] },
+];
+/* Liste des Business Partners (utilisée dans le formulaire Step 1) */
+const BPS = ['Jordan','Enguerrand','Léo','Pierre-Arnaud'];
+
+/* Définition des 4 étapes du workflow — affichées dans la sidebar */
+const STEPS = [
+  {n:1,label:'Client',           desc:'Nom & URL Claap R1'},
+  {n:2,label:'Leviers',          desc:'Sélectionner & valider'},
+  {n:3,label:'Review',           desc:'Générer, vérifier, affiner'},
+  {n:4,label:'Canva',            desc:'Injecter dans la présentation'},
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FONCTIONS UTILITAIRES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Crée une analyse vierge pour un levier (note 7/10 par défaut, textes vides) */
+function makeAnalysis(lever) {
+  return { noteGlobale:7, lectureBusiness:'', sousScores: LEVER_SUBSCORES[lever].map(n=>({nom:n,note:7,description:''})) };
+}
+
+/** Retourne la couleur associée à un score : vert (>=8), jaune-vert (>=6), orange (>=4), rouge (<4) */
+function scoreColor(s) { return s>=8?'#D4FF00':s>=6?'#32D74B':s>=4?'#FF9F0A':'#FF453A'; }
+
+/** Génère un identifiant unique (base36 timestamp + random) pour les nouvelles présentations */
+function genId() { return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+/** Construit l'URL du logo d'un site via l'API Clearbit (gratuite, basée sur le domaine) */
+function logoUrl(url) { try { const d=new URL(url).hostname; return `https://logo.clearbit.com/${d}?size=64`; } catch{ return null; } }
+
+/** Extrait les initiales d'un nom (ex: "Pierre-Arnaud" → "PA") */
+function initials(name) { return name.split(/[-\s]/).map(p=>p[0]).join('').toUpperCase().slice(0,2); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PERSISTANCE — localStorage
+   Les données sont partagées entre index.html et nouveau.html via la même
+   clé STORAGE_KEY. Le seed initial est créé par index.html.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Charge toutes les présentations depuis localStorage */
+function loadAll() { try{const r=localStorage.getItem(STORAGE_KEY);return r?JSON.parse(r):[];}catch{return[];} }
+
+/** Charge les paramètres utilisateur (profil BP connecté, etc.) */
+function loadSettings() { try{const r=localStorage.getItem('master_r2_settings');return r?JSON.parse(r):null;}catch{return null;} }
+
+/** Sauvegarde toutes les présentations dans localStorage */
+function saveAll(a) { localStorage.setItem(STORAGE_KEY,JSON.stringify(a)); }
+
+/** Insère ou met à jour une présentation dans le tableau localStorage.
+    Merge les champs passés avec les champs existants ({...ancien, ...nouveau}). */
+function upsert(p) {
+  const all=loadAll(), i=all.findIndex(x=>x.id===p.id);
+  const now=new Date().toISOString();
+  if(i>=0) all[i]={...all[i],...p,updatedAt:now};
+  else all.unshift({...p,createdAt:now,updatedAt:now});
+  saveAll(all);
+}
+
+/** Copie du texte dans le presse-papier (avec fallback pour les anciens navigateurs) */
+function copy(text,cb) {
+  if(navigator.clipboard) navigator.clipboard.writeText(text).then(cb);
+  else{const e=document.createElement('textarea');e.value=text;document.body.appendChild(e);e.select();document.execCommand('copy');document.body.removeChild(e);cb();}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATE MANAGEMENT — useReducer
+   État global de la présentation en cours d'édition.
+   Géré par un reducer avec des actions typées (SET, TGL, TGLSEC, STEP, etc.)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** État initial d'une nouvelle présentation.
+    - activeLevers : leviers pré-sélectionnés (Google Ads + Meta Ads par défaut, car ce sont
+      les plus fréquents chez les clients Bulldozer — gain de temps au remplissage)
+    - inactiveSections : sections décochées (['test_traction'] par défaut car le TDT est opt-in,
+      la plupart des présentations R2 ne l'incluent pas)
+    - contextSummary : { entreprise, enjeux, challenges } — pré-rempli avec un exemple générique
+      de SaaS B2B pour servir de modèle au BP (texte à remplacer avant validation)
+    - analyses : pré-remplies pour Google Ads et Meta Ads avec des notes et descriptions réalistes,
+      permettant au BP de voir immédiatement le format attendu et de les ajuster
+    - currentStep / maxStep : navigation entre les étapes (1 pour une nouvelle prez) */
+const INIT = { id:genId(), bp:'', clientName:'', clientWebsiteUrl:'', claapUrl:'', clientScreenshot:null, preAuditUrl:'', transcriptR1:'', canvaUrl:'', pricing:'', dateR1:'', dateR2:'',
+  activeLevers:['Google Ads','Meta Ads'],
+  inactiveSections:['test_traction'],
+  canvaTemplateId:'DAHGWFAK8B0',
+  contextSummary:{
+    entreprise:'Entreprise SaaS B2B spécialisée dans la digitalisation des process métier pour les PME et ETI en Europe.',
+    enjeux:'Accélérer l\'acquisition de leads qualifiés via le paid search et le paid social, tout en réduisant le CPA sur les marchés FR et DACH.',
+    challenges:'Concurrence forte des acteurs historiques et des pure players, coût par clic en hausse constante sur les mots-clés stratégiques.'
+  },
+  analyses:{
+    'Google Ads':{noteGlobale:6.5,lectureBusiness:'Les campagnes search captent du trafic mais le quality score est bas sur plusieurs ad groups. Les landing pages ne sont pas alignées avec les mots-clés ciblés, ce qui impacte le CPA.',sousScores:[
+      {nom:'Structure',note:6.5,description:'Trop de mots-clés par ad group, segmentation à retravailler par persona'},
+      {nom:'Mots-clés',note:5.5,description:'Mix broad match trop large, beaucoup de clics non qualifiés'},
+      {nom:'Annonces',note:6,description:'Copie générique qui ne met pas assez en avant les différenciateurs'},
+      {nom:'Landing pages',note:5,description:'Pages produit utilisées comme LP, pas de pages dédiées par campagne'},
+      {nom:'Performance',note:7,description:'CPA correct mais volume de conversions encore insuffisant'}
+    ]},
+    'Meta Ads':{noteGlobale:5.5,lectureBusiness:'Meta génère du volume mais la qualité des leads est inférieure aux autres canaux. Le ciblage doit être affiné et les créas renouvelées pour lutter contre la fatigue publicitaire.',sousScores:[
+      {nom:'Stratégie',note:5,description:'Pas de funnel structuré, campagnes orientées volume sans qualification'},
+      {nom:'Créas',note:6,description:'Visuels corrects mais manque d\'UGC et de diversité de formats'},
+      {nom:'Ciblage',note:5,description:'Ciblage intérêts trop large, audiences lookalike saturées'},
+      {nom:'Budget',note:6,description:'Budget correctement réparti mais mal optimisé entre prospection et retargeting'},
+      {nom:'Performance',note:5.5,description:'CPL bas en apparence mais taux de qualification très faible'}
+    ]}
+  },
+  currentStep:1, maxStep:1 };
+
+/** Reducer — gère toutes les mutations d'état :
+    - SET    : modifie un champ simple (ex: clientName, bp, canvaUrl)
+    - TGL    : toggle un levier dans activeLevers
+    - TGLSEC : toggle une section dans inactiveSections
+    - STEP   : change l'étape courante
+    - CTX    : modifie un champ du contextSummary
+    - AF     : modifie un champ d'une analyse levier (noteGlobale, lectureBusiness)
+    - SS     : modifie un sous-score d'une analyse levier
+    - LOAD   : charge une présentation existante depuis localStorage.
+               Restaure currentStep tel qu'il était au moment de la sauvegarde
+               (pas forcé à step 2), ce qui permet de reprendre exactement où on en était.
+               Le fallback à 2 (et non 1) évite de revenir au formulaire client déjà rempli. */
+function reducer(s,a) {
+  switch(a.t) {
+    case 'SET':    return {...s,[a.k]:a.v};
+    case 'TGL':    { const has=s.activeLevers.includes(a.l); return {...s,activeLevers:has?s.activeLevers.filter(x=>x!==a.l):[...s.activeLevers,a.l]}; }
+    case 'TGLSEC': { const has=s.inactiveSections.includes(a.id); return {...s,inactiveSections:has?s.inactiveSections.filter(x=>x!==a.id):[...s.inactiveSections,a.id]}; }
+    case 'STEP':   return {...s,currentStep:a.n,maxStep:Math.max(s.maxStep||1,a.n)};
+    case 'CTX':    return {...s,contextSummary:{...(s.contextSummary||{}),[a.k]:a.v}};
+    case 'AF':     { const p=s.analyses[a.l]||makeAnalysis(a.l); return {...s,analyses:{...s.analyses,[a.l]:{...p,[a.k]:a.v}}}; }
+    case 'SS':     { const p=s.analyses[a.l]||makeAnalysis(a.l); const ss=p.sousScores.map((x,i)=>i===a.i?{...x,[a.k]:a.v}:x); return {...s,analyses:{...s.analyses,[a.l]:{...p,sousScores:ss}}}; }
+    case 'LOAD':   return {...INIT,...a.d,inactiveSections:a.d.inactiveSections||[],currentStep:a.d.currentStep||2,maxStep:Math.max(a.d.maxStep||2,a.d.currentStep||2)};
+    default: return s;
+  }
+}
+/** Context React — partage le state + dispatch à tous les composants enfants */
+const Ctx=createContext(null);
+function useR2(){return useContext(Ctx);}
+
+/** Hook toast — affiche un message éphémère (2.2s) en bas à droite */
+function useToast(){
+  const [msg,setMsg]=useState(null);
+  const show=useCallback(m=>{setMsg(m);setTimeout(()=>setMsg(null),2200);},[]);
+  return {msg,show};
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONSTRUCTION DU JSON DE SORTIE
+   Génère le JSON final qui sera copié dans le presse-papier puis injecté
+   dans la présentation Canva via Claude Code / Cowork.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function buildJSON(s) {
+  const activeSections = SECTIONS.filter(sec=>!s.inactiveSections.includes(sec.id)).map(sec=>sec.label);
+  const activePreaudits = s.activeLevers.filter(l=>!s.inactiveSections.includes(`preaudit_${l}`));
+  const analyses={};
+  for(const l of s.activeLevers){
+    const a=s.analyses[l]||makeAnalysis(l);
+    analyses[l]={note_globale:a.noteGlobale,lecture_business:a.lectureBusiness,sous_scores:a.sousScores.map(x=>({nom:x.nom,note:x.note,separator:'—',description:x.description}))};
+  }
+  return {
+    version:'1.0',generated_at:new Date().toISOString(),
+    client:{name:s.clientName,website_url:s.clientWebsiteUrl,claap_r1:s.claapUrl,screenshot_base64:s.clientScreenshot||null},
+    canva:{template_id:s.canvaTemplateId,presentation_url:s.canvaUrl},
+    levers:{active:s.activeLevers},
+    slides:{fixed_sections:activeSections,preaudit_levers:activePreaudits,inactive:s.inactiveSections},
+    content:{context_summary:s.contextSummary||{entreprise:'',enjeux:'',challenges:''},analyses},
+    instructions:{find_replace:{find:'XXX',replace:s.clientName}},
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSANT : Sidebar (barre de navigation latérale gauche)
+   Affiche sur toutes les étapes :
+   - Logo Bulldozer + lien retour vers le dashboard
+   - Liste des 4 étapes avec indicateur visuel (dot vert/gris)
+   - Bouton "Copier le JSON" (actif uniquement quand step>=3, au moins un levier actif
+     et un nom client renseigné — sinon le bouton est grisé via opacity:0.3 et disabled)
+   - Statut "Brouillon sauvegardé" avec point vert animé (live-dot)
+   - Profil du BP connecté (si configuré dans les paramètres)
+
+   Props :
+   - toastFn : callback pour afficher un toast (ex: "JSON copié !")
+   - onLeave : callback appelé au clic sur "Accueil" — déclenche confirmLeave()
+     qui gère les 3 scénarios de sortie (existant / vide / en cours) avec confirm natif.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function Sidebar({toastFn,onLeave}) {
+  const {state,dispatch}=useR2();
+  return (
+    <div className="sidebar">
+      <div className="sb-logo" style={{cursor:'pointer'}} onClick={()=>window.location.href='index.html'}>
+        <img
+          className="sb-logo-img"
+          src="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU"
+          alt="Bulldozer"
+        />
+        <div>
+          <div style={{fontSize:18,fontWeight:700}}>Bulldozer collective</div>
+          <div style={{fontSize:14,color:'var(--text-3)'}}>Création des prez R2</div>
+        </div>
+      </div>
+      <div className="sb-back" onClick={onLeave} style={{cursor:'pointer'}}>🏠 Accueil</div>
+      <div className="sb-steps">
+        {STEPS.map(s=>{
+          const maxS=state.maxStep||1;
+          const visited=s.n<=maxS, active=state.currentStep===s.n, future=s.n>maxS;
+          return (
+            <div key={s.n} className={`sb-step${active?' act':''}`} onClick={()=>visited&&dispatch({t:'STEP',n:s.n})} style={{cursor:visited?'pointer':'default'}}>
+              <div className="sb-dot" style={{background:active?'var(--accent)':visited?'rgba(212,255,0,0.15)':'var(--bg-card)',border:`2px solid ${active?'var(--accent)':visited?'var(--accent)':'var(--border)'}`,color:active?'#000':visited?'var(--accent)':'var(--text-3)'}}>
+                {visited&&!active?'✓':s.n}
+              </div>
+              <div>
+                <div className="sb-lbl" style={{color:active?'var(--text)':visited?'var(--text-2)':'var(--text-3)',fontWeight:active?700:500}}>{s.n===1&&state.clientName?state.clientName:s.label}</div>
+                <div className="sb-desc">{s.desc}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="sb-bottom">
+        {(()=>{
+          const complete=state.currentStep>=3&&state.activeLevers.length>0&&state.clientName;
+          return <button className="btn-g" disabled={!complete} style={{width:'100%',justifyContent:'center',marginBottom:6,opacity:complete?1:0.3}} onClick={()=>{if(complete)copy(JSON.stringify(buildJSON(state),null,2),()=>toastFn('JSON copié !'));}}>Copier le JSON</button>;
+        })()}
+        <div className="sb-draft" style={{marginBottom:6}}><span className="live-dot"></span>Brouillon sauvegardé</div>
+        {(()=>{
+          const s=loadSettings();
+          if(!s?.currentUser) return null;
+          const bp=(s.bps||[]).find(b=>b.name===s.currentUser)||{color:'#D4FF00',tc:'#000',role:'Utilisateur'};
+          return (
+            <div style={{borderTop:'1px solid var(--border)',marginTop:6,paddingTop:6}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,cursor:'pointer',transition:'background 0.1s'}}
+                onClick={()=>window.location.href='parametres.html'}
+                onMouseEnter={e=>e.currentTarget.style.background='var(--bg-hover)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                {bp.photo
+                  ? <img src={bp.photo} alt={s.currentUser} style={{width:34,height:34,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${bp.color}`}}/>
+                  : <div style={{width:34,height:34,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:13,background:bp.color,color:bp.tc}}>{initials(s.currentUser)}</div>
+                }
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontSize:16,fontWeight:600,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.currentUser}</div>
+                  <div style={{fontSize:13,color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{bp.role}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSANT : SectionRow (ligne de slide dans le sélecteur de l'étape 2)
+   - Checkbox à gauche pour activer/désactiver la slide
+   - Label de la section + tag levier (le cas échéant)
+   - Thumbnails miniatures à droite (nombre réel, pas dupliqué)
+   - Clic sur la ligne → expand/collapse pour voir les thumbnails en grand
+   - Reçoit expandSignal du parent pour ouvrir/fermer toutes les lignes
+   ═══════════════════════════════════════════════════════════════════════════ */
+function SectionRow({sec, on, onToggle, tag, expandSignal}) {
+  const [expanded, setExpanded] = useState(false);
+  const srcThumbs = sec.noThumb ? [] : (sec.thumbs || []);
+  useEffect(()=>{if(expandSignal>0&&srcThumbs.length>0)setExpanded(true);if(expandSignal<0)setExpanded(false);},[expandSignal]);
+  return (
+    <div style={{borderBottom:'1px solid var(--border)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,padding:'4px 12px',cursor:'pointer',transition:'background 0.1s',opacity:on?1:0.45}}
+        onClick={()=>srcThumbs.length>0?setExpanded(!expanded):onToggle()}
+        onMouseEnter={e=>e.currentTarget.style.background='var(--bg-hover)'}
+        onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+        <div onClick={e=>{e.stopPropagation();onToggle();}} style={{width:16,height:16,borderRadius:3,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:9,fontFamily:'system-ui',transition:'all 0.15s',background:on?'var(--accent)':'var(--bg-input)',border:`1.5px solid ${on?'var(--accent)':'var(--border)'}`,color:'#000'}}>
+          {on?'✓':''}
+        </div>
+        <div style={{flex:1,fontSize:13,fontWeight:500,color:on?'var(--text)':'var(--text-3)',display:'flex',alignItems:'center',gap:8}}>
+          <span>{sec.label}{sec.desc&&<span style={{fontSize:11,color:'var(--text-3)',marginLeft:6}}>{sec.desc}</span>}</span>
+          {tag}
+          {srcThumbs.length>0&&<span style={{fontSize:10,color:'var(--text-3)'}}>{expanded?'▲':'▼'}</span>}
+        </div>
+        {srcThumbs.length>0&&!expanded&&(
+          <div style={{display:'flex',gap:3,flexShrink:0}}>
+            {srcThumbs.map((t,i)=>(
+              <img key={i} src={t} alt="" style={{width:40,height:24,objectFit:'cover',borderRadius:3,border:`1px solid ${on?'var(--border)':'rgba(72,72,68,0.5)'}`,flexShrink:0}}/>
+            ))}
+          </div>
+        )}
+      </div>
+      {expanded&&srcThumbs.length>0&&(
+        <div style={{padding:'6px 12px 10px 38px',display:'flex',flexWrap:'wrap',gap:6,background:'var(--bg-input)',borderTop:'1px solid var(--border)'}}>
+          {srcThumbs.map((t,i)=>(
+            <img key={i} src={t} alt="" style={{width:180,height:102,objectFit:'cover',borderRadius:5,border:'1.5px solid var(--border)',cursor:'pointer',transition:'transform 0.15s'}}
+              onMouseEnter={e=>e.currentTarget.style.transform='scale(1.05)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}/>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ÉTAPE 1 : Client
+   Formulaire de saisie des informations de base :
+   - Business Partner (sélection ou auto-détecté si connecté)
+   - Nom du client
+   - URL du site web client
+   - URL du Claap R1 (enregistrement de la réunion de découverte)
+   - URL Canva (optionnel, si le template est déjà créé)
+   - URL pré-audit (optionnel)
+   Le bouton "Continuer" lance le FetchingScreen (animation de transition).
+   ═══════════════════════════════════════════════════════════════════════════ */
+function Step1({onContinue}) {
+  const {state,dispatch,readOnly}=useR2();
+  const settings=loadSettings();
+  const loggedIn=settings&&settings.currentUser;
+  const loggedInBp=loggedIn?((settings.bps||[]).find(b=>b.name===settings.currentUser)||{color:'#D4FF00',tc:'#000'}):null;
+  const valid=(loggedIn||state.bp.length>0)&&state.clientName.trim().length>0&&state.claapUrl.trim().length>10;
+
+  return (
+    <div style={{padding:'48px 48px',minHeight:'100%',display:'flex',flexDirection:'column',opacity:readOnly?0.6:1,pointerEvents:readOnly?'none':'auto'}}>
+      <div style={{marginBottom:36}}>
+        <h1 style={{fontSize:22,fontWeight:800,margin:0,letterSpacing:'-0.02em',transition:'all 0.2s'}}>
+          {state.clientName
+            ? <>Construction de la présentation pour le R2 — <span style={{color:'var(--accent)'}}>{state.clientName}</span></>
+            : 'Nouvelle présentation R2'}
+        </h1>
+        <p style={{color:'var(--text-3)',marginTop:4,fontSize:14,margin:'4px 0 0'}}>Les infos de base pour démarrer.</p>
+      </div>
+
+      {/* BP */}
+      {loggedIn ? (
+        <div className="fsec">
+          <span className="flbl">Business Partner</span>
+          <div style={{display:'flex',alignItems:'center',gap:12,background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 16px',width:'fit-content'}}>
+            {loggedInBp.photo
+              ? <img src={loggedInBp.photo} alt={settings.currentUser} style={{width:36,height:36,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${loggedInBp.color}`}}/>
+              : <div style={{width:36,height:36,borderRadius:'50%',background:loggedInBp.color,color:loggedInBp.tc,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:14,flexShrink:0}}>
+                  {settings.currentUser.split(/[-\s]/).map(p=>p[0]).join('').toUpperCase().slice(0,2)}
+                </div>
+            }
+            <div>
+              <div style={{fontWeight:700,fontSize:20}}>{settings.currentUser}</div>
+              <div style={{fontSize:15,color:'var(--text-3)'}}>{loggedInBp.role||'Business Partner'} · <a href="parametres.html" style={{color:'var(--accent)',textDecoration:'none'}}>changer</a></div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="fsec">
+          <span className="flbl">Business Partner *</span>
+          <div className="pills">
+            {BPS.map(bp=>(
+              <button key={bp} className={`pill${state.bp===bp?' on':''}`} onClick={()=>dispatch({t:'SET',k:'bp',v:bp})}>{bp}</button>
+            ))}
+          </div>
+          <p className="fhint">Ou <a href="parametres.html" style={{color:'var(--accent)'}}>connectez-vous</a> dans les paramètres pour ne plus avoir à choisir.</p>
+        </div>
+      )}
+
+      {/* Nom + URL client */}
+      <div className="fsec" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
+        <div>
+          <span className="flbl">Nom du client *</span>
+          <input className="inp" value={state.clientName} onChange={e=>dispatch({t:'SET',k:'clientName',v:e.target.value})} placeholder="ex: Lotchi" />
+        </div>
+        <div>
+          <span className="flbl">URL du site client</span>
+          <input className="inp" type="url" value={state.clientWebsiteUrl} onChange={e=>dispatch({t:'SET',k:'clientWebsiteUrl',v:e.target.value})} placeholder="https://..." />
+        </div>
+      </div>
+
+      {/* URLs */}
+      <div className="fsec" style={{display:'flex',flexDirection:'column',gap:12}}>
+        <div>
+          <span className="flbl">URL du Claap R1 *</span>
+          <input className="inp" type="url" value={state.claapUrl} onChange={e=>dispatch({t:'SET',k:'claapUrl',v:e.target.value})} placeholder="https://claap.io/..." />
+        </div>
+        {/* Champs optionnels (canvaUrl, preAuditUrl) — visuellement distincts :
+            opacity:0.5 pour griser la zone, borderStyle:'dashed' pour signaler le caractère optionnel,
+            et background:'var(--bg)' (plus sombre que --bg-input) pour les différencier des champs obligatoires.
+            Claude les retrouve automatiquement à partir du Claap R1 et du nom client lors de la génération. */}
+        <div style={{opacity:0.5}}>
+          <span className="flbl">URL Canva <span style={{fontSize:11,color:'var(--text-3)',fontWeight:400}}>— optionnel, retrouvé automatiquement</span></span>
+          <input className="inp" type="url" value={state.canvaUrl} onChange={e=>dispatch({t:'SET',k:'canvaUrl',v:e.target.value})} placeholder="https://www.canva.com/design/..." style={{background:'var(--bg)',borderStyle:'dashed'}} />
+        </div>
+        <div style={{opacity:0.5}}>
+          <span className="flbl">URL du pré-audit <span style={{fontSize:11,color:'var(--text-3)',fontWeight:400}}>— optionnel, retrouvé automatiquement</span></span>
+          <input className="inp" type="url" value={state.preAuditUrl} onChange={e=>dispatch({t:'SET',k:'preAuditUrl',v:e.target.value})} placeholder="https://business-partner.bulldozer-collective.fr/audits/..." style={{background:'var(--bg)',borderStyle:'dashed'}} />
+        </div>
+      </div>
+
+      <div style={{marginTop:'auto',padding:'14px 0 0',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div/>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {!valid&&<span style={{fontSize:12,color:'var(--text-3)'}}>Nom client et URL Claap R1 requis</span>}
+          <button className="btn-g" onClick={()=>{upsert({...state,status:'brouillon'});window.location.href='index.html';}}>Enregistrer et quitter</button>
+          <button className="btn-p" disabled={!valid} onClick={onContinue}>Continuer →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ÉTAPE 2 : Leviers & Slides
+   Layout en 2 colonnes :
+   - Gauche (340px) : sélection des leviers marketing
+     * Demand Capture : SEO, GEO, Google Ads, CRO
+     * Demand Gen : Meta Ads, LinkedIn Ads + option TDT
+   - Droite : sélecteur de slides à inclure dans la présentation
+     * Groupées par catégorie : Introduction, Préaudit DC/DG, TDT, Stratégie, Pricing, Next Steps
+     * Chaque ligne a une checkbox, des thumbnails, et un expand/collapse
+     * Boutons "Tout ouvrir / Tout fermer" pour les aperçus
+   Le footer contient les boutons Retour / Continuer.
+
+   LABELS UNIFIÉS : "Leviers" côté gauche et "Slides" côté droite sont les deux
+   concepts centraux de cette étape — nommés ainsi dans la sidebar (Step 2 desc)
+   et dans les en-têtes de chaque colonne.
+
+   COMPTEUR DE SLIDES : calculé dynamiquement en haut de la colonne droite en
+   comptant les thumbs de chaque section active + les préaudits par levier.
+   Convention : use_case = 6 slides (même sans thumbs).
+
+   TOGGLE TDT (Test de traction) : rattaché visuellement au groupe "Demand Gen"
+   car il concerne principalement Meta/LinkedIn. C'est un bouton orange distinct
+   des leviers (pas dans activeLevers mais dans inactiveSections via TGLSEC).
+   ═══════════════════════════════════════════════════════════════════════════ */
+function Step2() {
+  const {state,dispatch,readOnly}=useR2();
+  const valid=state.activeLevers.length>0;
+  const [expandSignal,setExpandSignal]=useState(0);
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+      {/* Header */}
+      <div style={{padding:'24px 48px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+        <h1 style={{fontSize:22,fontWeight:800,margin:0,letterSpacing:'-0.02em'}}>{state.clientName ? <>Leviers & slides — <span style={{color:'var(--accent)'}}>{state.clientName}</span></> : 'Leviers & slides'}</h1>
+        <p style={{color:'var(--text-3)',marginTop:4,fontSize:14,margin:'4px 0 0'}}>Sélectionnez les leviers, puis vérifiez les slides à inclure.</p>
+      </div>
+
+      {/* Body — 2 cols */}
+      <div style={{display:'grid',gridTemplateColumns:'340px 1fr',flex:1,overflow:'hidden',opacity:readOnly?0.6:1,pointerEvents:readOnly?'none':'auto'}}>
+
+        {/* Left — leviers + canva */}
+        <div style={{borderRight:'1px solid var(--border)',padding:'24px 28px',overflowY:'auto',display:'flex',flexDirection:'column',gap:0}}>
+          <div className="fsec">
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:15,fontWeight:800,color:'var(--text)',fontFamily:"'Inconsolata',monospace",letterSpacing:'-0.01em'}}>Leviers</div>
+              <div style={{width:55,height:2,background:'var(--accent)',borderRadius:1,marginTop:4}}/>
+            </div>
+            {[{label:'Demand Capture',levers:DEMAND_CAPTURE},{label:'Demand Gen',levers:DEMAND_GEN}].map(group=>{
+              const isDemandGen=group.label==='Demand Gen';
+              return (
+              <div key={group.label} style={{marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>{group.label}</div>
+                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  {group.levers.map(l=>{
+                    const on=state.activeLevers.includes(l);
+                    const lc=LEVER_COLORS[l]||{bg:'#555',color:'#fff'};
+                    return (
+                      <button key={l}
+                        style={{display:'flex',alignItems:'center',gap:8,padding:'7px 11px',borderRadius:6,border:`1.5px solid ${on?lc.bg:'var(--border)'}`,background:on?lc.bg+'22':'transparent',color:on?'var(--text)':'var(--text-2)',fontWeight:on?700:500,fontSize:14,cursor:'pointer',transition:'all 0.12s',textAlign:'left'}}
+                        onClick={()=>dispatch({t:'TGL',l})}>
+                        <span style={{fontSize:16}}>{LEVER_ICONS[l]}</span>
+                        <span style={{flex:1}}>{l}</span>
+                        {on&&<span style={{width:14,height:14,borderRadius:'50%',background:lc.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:900,fontFamily:'system-ui',color:lc.color,flexShrink:0}}>✓</span>}
+                      </button>
+                    );
+                  })}
+                  {isDemandGen&&(()=>{
+                    const tdtOn=!state.inactiveSections.includes('test_traction');
+                    return (
+                      <button
+                        style={{display:'flex',alignItems:'center',gap:8,padding:'7px 11px',borderRadius:6,border:`1.5px solid ${tdtOn?'#FF9F0A':'var(--border)'}`,background:tdtOn?'rgba(255,159,10,0.12)':'transparent',color:tdtOn?'var(--text)':'var(--text-2)',fontWeight:tdtOn?700:500,fontSize:14,cursor:'pointer',transition:'all 0.12s',textAlign:'left'}}
+                        onClick={()=>dispatch({t:'TGLSEC',id:'test_traction'})}>
+                        <span style={{fontSize:16}}>🧪</span>
+                        <span style={{flex:1}}>Test de traction (TDT)</span>
+                        {tdtOn&&<span style={{width:14,height:14,borderRadius:'50%',background:'#FF9F0A',display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:900,fontFamily:'system-ui',color:'#000',flexShrink:0}}>✓</span>}
+                      </button>
+                    );
+                  })()}
+                </div>
+              </div>
+              );
+            })}
+          </div>
+
+        </div>
+
+        {/* Right — slides */}
+        <div style={{overflowY:'auto',display:'flex',flexDirection:'column'}}>
+          {/* Compteur de slides — calcul dynamique selon les sections actives */}
+          {(()=>{
+            const USE_CASE_COUNT=6; // convention : 6 use cases en moyenne
+            let total=0;
+            // Sections fixes actives
+            SECTIONS.filter(s=>!state.inactiveSections.includes(s.id)).forEach(s=>{
+              if(s.id==='use_case') total+=USE_CASE_COUNT;
+              else total+=Math.max(s.thumbs.length,1);
+            });
+            // Préaudits par levier actif
+            state.activeLevers.forEach(l=>{
+              if(!state.inactiveSections.includes(`preaudit_${l}`)) total+=1;
+              (LEVER_EXTRA_SLIDES[l]||[]).forEach(ex=>{
+                if(!state.inactiveSections.includes(`preaudit_${l}_${ex.suffix}`)) total+=1;
+              });
+            });
+            return (
+          <div style={{padding:'24px 24px 8px',borderBottom:'1px solid var(--border)',flexShrink:0,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:800,color:'var(--text)',fontFamily:"'Inconsolata',monospace",letterSpacing:'-0.01em'}}>Slides à inclure</div>
+                <div style={{width:115,height:2,background:'var(--accent)',borderRadius:1,marginTop:4}}/>
+              </div>
+              <span style={{fontSize:13,fontWeight:700,color:'var(--accent)',fontFamily:'monospace'}}>{total} slides</span>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button className="btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setExpandSignal(s=>Math.abs(s)+1)}>Tout ouvrir</button>
+              <button className="btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setExpandSignal(s=>-(Math.abs(s)+1))}>Tout fermer</button>
+            </div>
+          </div>
+            );})()}
+          <div style={{flex:1,overflow:'auto'}}>
+            {/* ── Groupes de slides ──────────────────────────────────────
+                Deux types de groupes :
+                - Statiques (ids) : slides fixes liees par theme (Introduction, Strategie, etc.)
+                - Dynamiques (levers) : slides preaudit generees selon les leviers actifs.
+                  Pour chaque levier actif, on cree une SectionRow avec le tag colore du levier
+                  + les eventuelles slides supplementaires (LEVER_EXTRA_SLIDES, ex: CRO Quick Wins).
+                Les groupes dont toutes les sections sont desactivees sont masques. */}
+            {[
+              {label:'Introduction',           ids:['disclaimer','pres_bd','contexte']},
+              {label:'Préaudit Demand Capture', levers:DEMAND_CAPTURE},
+              {label:'Préaudit Demand Gen',     levers:DEMAND_GEN},
+              {label:'Test de traction',        ids:['test_traction']},
+              {label:'Stratégie',               ids:['bilan','plan_action','suivi_projet','equipe','use_case']},
+              {label:'Pricing',                 ids:['pricing','projection']},
+              {label:'Next Steps',              ids:['why_bd','next_step']},
+            ].map(group=>{
+              // Groupes preaudit : generes dynamiquement en fonction des leviers actifs
+              if(group.levers){
+                const active=group.levers.filter(l=>state.activeLevers.includes(l));
+                const allOff=active.length>0&&active.every(l=>state.inactiveSections.includes(`preaudit_${l}`));
+                if(active.length===0||allOff) return null;
+                return (<React.Fragment key={group.label}>
+                  <div style={{padding:'5px 12px',background:'var(--bg-input)',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:13,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{group.label}</span>
+                  </div>
+                  {active.flatMap(l=>{
+                    const id=`preaudit_${l}`;
+                    const lc=LEVER_COLORS[l]||{bg:'#555',color:'#fff'};
+                    const tag=<span style={{padding:'2px 8px',borderRadius:4,background:lc.bg,color:lc.color,fontSize:12,fontWeight:700,fontFamily:'monospace',flexShrink:0}}>{l}</span>;
+                    const rows=[
+                      <SectionRow key={id}
+                        sec={{id,label:`Préaudit ${l}`,thumbs:PREAUDIT_THUMBS[l]||[]}}
+                        on={!state.inactiveSections.includes(id)}
+                        onToggle={()=>dispatch({t:'TGLSEC',id})}
+                        tag={tag} expandSignal={expandSignal} />
+                    ];
+                    (LEVER_EXTRA_SLIDES[l]||[]).forEach(ex=>{
+                      const eid=`preaudit_${l}_${ex.suffix}`;
+                      rows.push(
+                        <SectionRow key={eid}
+                          sec={{id:eid,label:ex.label,thumbs:ex.thumbs||[],noThumb:ex.noThumb}}
+                          on={!state.inactiveSections.includes(eid)}
+                          onToggle={()=>dispatch({t:'TGLSEC',id:eid})}
+                          tag={tag} expandSignal={expandSignal} />
+                      );
+                    });
+                    return rows;
+                  })}
+                </React.Fragment>);
+              }
+              // Static groups
+              const secs=SECTIONS.filter(s=>group.ids.includes(s.id));
+              const allOff=secs.every(s=>state.inactiveSections.includes(s.id));
+              if(allOff) return null;
+              return (<React.Fragment key={group.label}>
+                <div style={{padding:'5px 12px',background:'var(--bg-input)',borderBottom:'1px solid var(--border)'}}>
+                  <span style={{fontSize:13,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{group.label}</span>
+                </div>
+                {secs.map(sec=>(
+                  <SectionRow key={sec.id} sec={sec}
+                    on={!state.inactiveSections.includes(sec.id)}
+                    onToggle={()=>dispatch({t:'TGLSEC',id:sec.id})} expandSignal={expandSignal} />
+                ))}
+              </React.Fragment>);
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{padding:'14px 28px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,background:'var(--bg-nav)'}}>
+        <button className="btn-g" onClick={()=>dispatch({t:'STEP',n:1})}>← Retour</button>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn-g" onClick={()=>{upsert({...state,status:'brouillon'});window.location.href='index.html';}}>Enregistrer et quitter</button>
+          <button className="btn-p" disabled={!valid} onClick={()=>dispatch({t:'STEP',n:3})}>Continuer →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSANTS DE LA REVIEW : ScoreSlider, ScBadge, ContextCard, AnalysisCard
+
+   ScoreSlider — Slider compact (0-10) avec input numérique
+   ScBadge     — Badge coloré affichant un score (ex: "7.5/10")
+   ContextCard — Card éditable pour le contexte client (entreprise, enjeux, challenges)
+                 Toggle open/close, bouton Valider/Invalider, compteur de mots
+   AnalysisCard — Card éditable pour l'analyse d'un levier (note globale, lecture business,
+                  5 sous-scores avec slider + description). Toggle, Valider/Invalider,
+                  bouton "Regénérer" avec mini-chat pour donner du contexte à Claude.
+
+   ÉTAPE 3 : Review (avec génération intégrée)
+   Mode "Tinder" : une card à la fois (contexte, puis chaque levier).
+   - Header : titre + compteur (1/4), progress bar, dots de navigation cliquables
+   - Contenu central : ContextCard ou AnalysisCard selon la card courante
+   - Footer : Précédent / Suivant (ou Continuer vers Canva)
+   - Navigation clavier : flèches (prev/next), Entrée (valider), Escape (dashboard)
+   - Bouton regénération par card avec champ de contexte libre
+   - Boutons "Tout ouvrir / Tout fermer" les toggles
+   ═══════════════════════════════════════════════════════════════════════════ */
+function ScoreSlider({value,onChange}) {
+  return (
+    <div className="sr-row">
+      <input type="range" min="0" max="10" step="0.5" value={value} onChange={e=>onChange(parseFloat(e.target.value))}/>
+      <input className="sr-num" type="number" min="0" max="10" step="0.5" value={value} onChange={e=>onChange(parseFloat(e.target.value)||0)}/>
+    </div>
+  );
+}
+function ScBadge({score}) {
+  const c=scoreColor(score);
+  return <span className="sc-badge" style={{background:c+'18',color:c,border:`1px solid ${c}30`}}>{score.toFixed(1)}/10</span>;
+}
+/** ContextCard — Card editable pour le contexte client (entreprise, enjeux, challenges).
+    Fonctionnalites :
+    - Toggle open/close avec chevron anime
+    - Compteur de mots (objectif : 120 mots max, affiche en vert/rouge)
+    - Bouton Valider/Invalider qui grise la card et la replie
+    - Regeneration par champ : chaque champ (entreprise/enjeux/challenges) a un bouton
+      "Regenerer" qui ouvre un mini-chat inline pour donner du contexte supplementaire
+      a Claude (ex: "plus oriente business model")
+    - Le validateSignal vient du parent (Step3Review) quand l'utilisateur appuie sur Enter :
+      si la card n'est pas validee, la valide et la replie ; si deja validee, l'invalide et l'ouvre
+    - forceOpen vient des boutons "Tout ouvrir / Tout fermer" du parent */
+function ContextCard({forceOpen,validateSignal,onRegenerate,validated,onValidate,onNext}) {
+  const {state,dispatch,readOnly}=useR2();
+  const ctx=state.contextSummary||{entreprise:'',enjeux:'',challenges:''};
+  const wc=Object.values(ctx).join(' ').split(/\s+/).filter(Boolean).length; // Nombre total de mots
+  const setValidated=onValidate||(()=>{});
+  const [open,setOpen]=useState(!validated); // Ouvert par defaut si pas encore valide
+  const [regenField,setRegenField]=useState(null); // Champ en cours de regeneration (null = aucun)
+  const [regenCtx,setRegenCtx]=useState(''); // Contexte libre saisi pour la regeneration
+  const prevValidate=useRef(validateSignal); // Ref pour detecter les changements de signal
+  useEffect(()=>{if(forceOpen!==undefined)setOpen(forceOpen);},[forceOpen]);
+  useEffect(()=>{if(validateSignal!==prevValidate.current&&validateSignal>0){if(!validated){setValidated(true);}else{setValidated(false);}}prevValidate.current=validateSignal;},[validateSignal]);
+  return (
+    <div className="card" style={{marginBottom:12,padding:'16px 20px',opacity:validated?0.6:1,transition:'opacity 0.2s'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{fontWeight:700,fontSize:18}}>Contexte client</div>
+          {validated&&<span style={{fontSize:13,fontWeight:700,color:'#32D74B'}}>Validé</span>}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span className="sc-badge" style={{background:wc>120?'rgba(255,69,58,0.12)':'rgba(50,215,75,0.12)',color:wc>120?'#FF453A':'#32D74B',border:`1px solid ${wc>120?'rgba(255,69,58,0.25)':'rgba(50,215,75,0.25)'}`}}>{wc}/120 mots</span>
+          {validated&&!readOnly&&<button className="btn-g" onClick={e=>{e.stopPropagation();setValidated(false);}}>Invalider</button>}
+        </div>
+      </div>
+      <div style={{marginTop:14}}>
+        {['entreprise','enjeux','challenges'].map(f=>(
+          <div key={f} style={{marginBottom:12}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+              <span style={{fontSize:13,fontWeight:600,color:'var(--text-3)',textTransform:'capitalize'}}>{f}</span>
+              {onRegenerate&&!readOnly&&<button className="btn-g" style={{fontSize:10,padding:'2px 6px'}} onClick={e=>{e.stopPropagation();setRegenField(regenField===f?null:f);setRegenCtx('');}}>
+                {regenField===f?'Annuler':'Regénérer'}
+              </button>}
+            </div>
+            <textarea className="inp" value={ctx[f]||''} onChange={e=>!readOnly&&dispatch({t:'CTX',k:f,v:e.target.value})} readOnly={readOnly} rows={3} style={{fontSize:14,padding:'8px 12px',lineHeight:1.5,opacity:readOnly?0.6:1}}/>
+            {regenField===f&&(
+              <div style={{marginTop:6,background:'var(--bg-input)',borderRadius:8,border:'1px solid var(--border)',padding:'8px 10px'}}>
+                <div style={{fontSize:11,fontWeight:600,color:'var(--text-3)',marginBottom:4}}>Contexte pour regénérer "{f}"</div>
+                <div style={{display:'flex',gap:8}}>
+                  <input className="inp" value={regenCtx} onChange={e=>setRegenCtx(e.target.value)}
+                    placeholder={`Ex: plus orienté ${f==='entreprise'?'business model':'résultats concrets'}...`}
+                    style={{flex:1,fontSize:13,padding:'6px 10px'}}
+                    onKeyDown={e=>{if(e.key==='Enter'&&regenCtx.trim()){e.stopPropagation();onRegenerate('contexte.'+f,regenCtx);setRegenField(null);setRegenCtx('');}}}/>
+                  <button className="btn-p" onClick={e=>{e.stopPropagation();onRegenerate('contexte.'+f,regenCtx);setRegenField(null);setRegenCtx('');}}>Regénérer</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {!readOnly&&<div style={{display:'flex',justifyContent:'flex-end'}}>
+          <button className={validated?'btn-g':'btn-p'} onClick={e=>{e.stopPropagation();const nv=!validated;setValidated(nv);if(nv&&onNext)setTimeout(onNext,300);}}>
+            {validated?'Modifier':'Valider'}
+          </button>
+        </div>}
+      </div>
+    </div>
+  );
+}
+/** AnalysisCard — Card editable pour l'analyse d'un levier marketing.
+    Affiche pour chaque levier :
+    - Badge colore avec le nom du levier + indicateur "Valide" si applicable
+    - Note globale (slider 0-10) avec badge colore (vert/jaune/orange/rouge)
+    - Textarea pour la lecture business (analyse qualitative)
+    - 5 sous-scores (slider + input + badge + description) definis dans LEVER_SUBSCORES
+    - Bouton "Regenerer" avec mini-chat pour donner du contexte supplementaire a Claude
+    - Bouton Valider/Modifier pour figer l'analyse
+    Meme pattern de validation que ContextCard (validateSignal, forceOpen, etc.) */
+function AnalysisCard({lever,onRegenerate,forceOpen,validateSignal,validated,onValidate,onNext}) {
+  const {state,dispatch,readOnly}=useR2();
+  const a=state.analyses[lever]||makeAnalysis(lever); // Analyse existante ou vierge (note 7 par defaut)
+  const [open,setOpen]=useState(!validated);
+  const setValidated=onValidate||(()=>{});
+  const [regenOpen,setRegenOpen]=useState(false); // Affiche/masque le champ de contexte pour la regeneration
+  const [regenCtx,setRegenCtx]=useState('');       // Texte libre pour guider la regeneration
+  const lc=LEVER_COLORS[lever]||{bg:'#333',color:'#fff'}; // Couleur du levier pour le badge
+  const prevValidate=useRef(validateSignal);
+  useEffect(()=>{if(forceOpen!==undefined)setOpen(forceOpen);},[forceOpen]);
+  useEffect(()=>{if(validateSignal!==prevValidate.current&&validateSignal>0){if(!validated){setValidated(true);}else{setValidated(false);}}prevValidate.current=validateSignal;},[validateSignal]);
+  return (
+    <div className="card" style={{marginBottom:10,padding:'12px 16px',opacity:validated?0.6:1,transition:'opacity 0.2s'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{display:'inline-flex',alignItems:'center',gap:6,background:lc.bg,color:lc.color,padding:'3px 10px',borderRadius:5,fontWeight:800,fontSize:15}}>
+            {LEVER_ICONS[lever]} {lever}
+          </span>
+          {validated&&<span style={{fontSize:13,fontWeight:700,color:'#32D74B'}}>Validé</span>}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <ScBadge score={a.noteGlobale}/>
+          {validated&&!readOnly&&<button className="btn-g" onClick={e=>{e.stopPropagation();setValidated(false);}}>Invalider</button>}
+        </div>
+      </div>
+      <div style={{marginTop:12}}>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8,opacity:readOnly?0.6:1}}>
+        <span style={{fontSize:13,fontWeight:600,color:'var(--text-3)'}}>Note globale</span>
+        <ScoreSlider value={a.noteGlobale} onChange={v=>!readOnly&&dispatch({t:'AF',l:lever,k:'noteGlobale',v})}/>
+      </div>
+      <div style={{marginBottom:8}}>
+        <textarea className="inp" value={a.lectureBusiness} onChange={e=>!readOnly&&dispatch({t:'AF',l:lever,k:'lectureBusiness',v:e.target.value})} readOnly={readOnly} rows={2} placeholder="Lecture business..." style={{fontSize:14,padding:'8px 10px',opacity:readOnly?0.6:1}}/>
+      </div>
+      {a.sousScores.map((ss,i)=>(
+        <div key={ss.nom} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:i<a.sousScores.length-1?'1px solid var(--border)':'none',opacity:readOnly?0.6:1}}>
+          <span style={{fontSize:14,fontWeight:600,color:'var(--text-2)',width:100,flexShrink:0}}>{ss.nom}</span>
+          <ScoreSlider value={ss.note} onChange={v=>!readOnly&&dispatch({t:'SS',l:lever,i,k:'note',v})}/>
+          <ScBadge score={ss.note}/>
+          <input className="inp" value={ss.description} onChange={e=>!readOnly&&dispatch({t:'SS',l:lever,i,k:'description',v:e.target.value})} readOnly={readOnly} placeholder={`Description...`} style={{flex:1,fontSize:13,padding:'5px 8px'}}/>
+        </div>
+      ))}
+      {/* ── Mini-chat de regeneration ──
+          Champ de saisie libre ou le BP peut indiquer des precisions pour guider
+          la regeneration de l'analyse par Claude (ex: "insiste sur le mobile",
+          "ton trop technique, vulgarise davantage"). Le texte est passe en parametre
+          `context` a launchGeneration() qui l'ajoute au prompt copie. */}
+      {onRegenerate&&regenOpen&&(
+        <div style={{marginTop:10,background:'var(--bg-input)',borderRadius:8,border:'1px solid var(--border)',padding:'10px 12px'}}>
+          <div style={{fontSize:12,fontWeight:600,color:'var(--text-3)',marginBottom:6}}>Contexte pour la regénération</div>
+          <div style={{display:'flex',gap:8}}>
+            <input className="inp" value={regenCtx} onChange={e=>setRegenCtx(e.target.value)}
+              placeholder="Ex: insiste sur le mobile, ton trop technique..."
+              style={{flex:1,fontSize:13,padding:'6px 10px'}}
+              onKeyDown={e=>{if(e.key==='Enter'&&regenCtx.trim()){e.stopPropagation();onRegenerate(lever,regenCtx);setRegenOpen(false);setRegenCtx('');}}}/>
+            <button className="btn-p" onClick={e=>{e.stopPropagation();onRegenerate(lever,regenCtx);setRegenOpen(false);setRegenCtx('');}}>Regénérer</button>
+          </div>
+        </div>
+      )}
+      {!readOnly&&<div style={{marginTop:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{display:'flex',gap:6}}>
+          {onRegenerate&&<button className="btn-g" onClick={e=>{e.stopPropagation();setRegenOpen(o=>!o);}}>{regenOpen?'Annuler':'Regénérer'}</button>}
+        </div>
+        <button className={validated?'btn-g':'btn-p'} onClick={e=>{e.stopPropagation();const nv=!validated;setValidated(nv);if(nv&&onNext)setTimeout(onNext,300);}}>
+          {validated?'Modifier':'Valider'}
+        </button>
+      </div>}
+      </div>
+    </div>
+  );
+}
+/** Step3Review — Etape 3 du workflow : relecture du contenu genere.
+    Interface "Tinder" : affiche une seule card a la fois (contexte client, puis chaque levier).
+    L'utilisateur navigue entre les cards avec les fleches/dots, valide chaque card avec Enter,
+    et peut regenerer du contenu via les mini-chats de chaque card.
+
+    PARTICULARITES DU MODE TINDER :
+    - SANS toggles open/close : contrairement aux anciens modes, le contenu de chaque card est
+      toujours visible (pas de chevron pour replier). Les boutons "Tout ouvrir / Tout fermer"
+      restent accessibles mais agissent sur les sections internes (sous-scores).
+    - Validation : griser la card (opacity 0.6) mais la garder ouverte. Le bouton "Valider"
+      passe a "Modifier" pour permettre de corriger sans changer de card.
+    - validatedMap : etat de validation par card stocke dans le parent (Step3Review) et non
+      dans chaque card enfant. Ainsi, valider la card contexte puis naviguer vers un levier
+      et revenir au contexte garde l'etat "Valide" intact.
+    - onNext callback : quand le BP clique "Valider" sur une card, si c'est la derniere
+      de la pile, onNext tente de passer au Step 4 (si isComplete). Sinon, auto-avance
+      vers la card suivante avec un delai de 300ms pour le feedback visuel.
+    - Enter = valider + avancer : le raccourci clavier envoie validateSignal (incrémenté),
+      lu par les cards enfants via useEffect. Apres 300ms, avance a la card suivante.
+      Le signal est remis a 0 apres 50ms pour eviter les double-declenchements.
+    - Badge "Contenu incomplet — Corriger" : affiche en rouge quand on est sur la derniere
+      card et que isComplete est false. Le lien "Corriger" navigue directement vers la
+      premiere card incomplete (contexte ou levier manquant).
+
+    isComplete = tous les 3 champs contexte remplis ET toutes les lectureBusiness des leviers actifs non vides.
+    La barre de progression et les dots indiquent la position dans la pile de cards. */
+function Step3Review({toastFn}) {
+  const {state,dispatch,readOnly}=useR2();
+  const json=buildJSON(state);
+  const jsonStr=JSON.stringify(json,null,2);
+  const [generating,setGenerating]=useState(false);   // Animation de regeneration en cours
+  const [genTarget,setGenTarget]=useState('all');      // Cible de la regeneration ('all' ou nom du levier)
+  const [genProgress,setGenProgress]=useState(0);      // Progression de l'animation (0 a 1)
+  const genTimerRef=useRef(null);                      // Ref pour annuler requestAnimationFrame
+
+  /* ── validatedMap : persistance de la validation par card ──────────────
+     Stocke l'etat valide/invalide de chaque card (contexte + leviers) dans un
+     objet { cardKey: boolean }. Cet etat est maintenu meme quand l'utilisateur
+     navigue entre les cards (idx change), car il vit dans le composant parent
+     Step3Review et non dans les cards enfants. Chaque card recoit sa valeur
+     via la prop `validated` et la met a jour via `onValidate`. */
+  const [validatedMap,setValidatedMap]=useState({});
+  function setCardValidated(cardKey,val){setValidatedMap(m=>({...m,[cardKey]:val}));}
+
+  // Vérifie si tout le contenu est complet (contexte + analyses)
+  const ctx=state.contextSummary||{};
+  const ctxComplete=Object.values(ctx).filter(v=>v&&v.trim()).length>=3;
+  const analysesComplete=state.activeLevers.every(l=>{const a=state.analyses[l];return a&&a.lectureBusiness&&a.lectureBusiness.trim();});
+  const isComplete=ctxComplete&&analysesComplete;
+
+  const [allOpen,setAllOpen]=useState(undefined);
+  const [validateSignal,setValidateSignal]=useState(0);
+
+  /* ── Pile de cards (mode Tinder) ──
+     La premiere card est toujours 'contexte', suivie d'une card par levier actif.
+     idx = index de la card courante (0 = contexte, 1+ = leviers).
+     reviewProgress = pourcentage de progression affiche dans la barre (1/N, 2/N... N/N). */
+  const cards=['contexte',...state.activeLevers];
+  const [idx,setIdx]=useState(0);
+  const total=cards.length;
+  const current=cards[Math.min(idx,total-1)];
+  const isCtx=current==='contexte';
+  const reviewProgress=((Math.min(idx,total-1)+1)/total)*100;
+
+  /* ── Navigation clavier dans la Review (mode Tinder) ──────────────────
+     Les raccourcis ne se declenchent PAS quand le focus est dans un champ de saisie
+     (INPUT, TEXTAREA, SELECT) pour ne pas interferer avec l'edition.
+     - ArrowRight : card suivante (ou passe a Step 4 si derniere card et contenu complet)
+     - ArrowLeft  : card precedente (ou retour a Step 2 si premiere card)
+     - Enter      : valide la card courante puis avance (comme un swipe "like" en Tinder)
+                     Le signal validateSignal est temporaire : monte a +1, lu par les cards
+                     enfants via useEffect, puis reset a 0 apres 50ms
+     - Escape     : retour direct au dashboard (index.html)
+     - Backspace  : identique a ArrowLeft (retour card precedente ou Step 2)
+     Note : la dependance [total] garantit le recalcul si le nombre de cards change. */
+  useEffect(()=>{
+    const handler=e=>{
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
+      if(e.key==='ArrowRight'){e.preventDefault();setIdx(i=>{const n=i+1;if(n>=total){if(isComplete)dispatch({t:'STEP',n:4});return i;}return n;});}
+      if(e.key==='ArrowLeft'){e.preventDefault();setIdx(i=>{if(i<=0){dispatch({t:'STEP',n:2});return 0;}return i-1;});}
+      if(e.key==='Enter'&&!readOnly){e.preventDefault();setValidateSignal(s=>s+1);setTimeout(()=>{setIdx(i=>{const n=i+1;if(n>=total){if(isComplete)dispatch({t:'STEP',n:4});return i;}return n;});setTimeout(()=>setValidateSignal(0),50);},300);}
+      if(e.key==='Escape'){e.preventDefault();window.location.href='index.html';}
+      if(e.key==='Backspace'){e.preventDefault();setIdx(i=>{if(i<=0){dispatch({t:'STEP',n:2});return 0;}return i-1;});}
+    };
+    window.addEventListener('keydown',handler);
+    return()=>window.removeEventListener('keydown',handler);
+  },[total]);
+
+  /* Commande texte copiee dans le presse-papier pour etre collee dans Claude Code.
+     Contient les infos essentielles : client, BP, URLs, leviers actifs.
+     Les lignes null (URLs optionnelles non renseignees) sont filtrees par .filter(Boolean). */
+  const cmd=[
+    `Lance le R2 pour ${state.clientName}.`,``,
+    `• BP : ${state.bp}`,
+    `• Claap R1 : ${state.claapUrl}`,
+    `• Site client : ${state.clientWebsiteUrl}`,
+    `• Leviers : ${state.activeLevers.join(', ')}`,
+    state.preAuditUrl?`• Pré-audit : ${state.preAuditUrl}`:null,
+    state.canvaUrl?`• Canva : ${state.canvaUrl}`:null,
+  ].filter(Boolean).join('\n');
+
+  function download() {
+    const b=new Blob([jsonStr],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');
+    a.href=u;a.download=`r2_${state.clientName.replace(/\s+/g,'_').toLowerCase()}.json`;a.click();URL.revokeObjectURL(u);
+  }
+
+  /** Lance la generation (ou regeneration) du contenu.
+      @param target - 'all' pour tout generer, ou un nom de levier/champ pour regenerer partiellement
+      @param context - contexte supplementaire saisi par l'utilisateur dans le champ de regeneration
+
+      Flux :
+      1. Sauvegarde la prez en statut 'en_cours' dans le localStorage
+      2. Construit la commande texte (cmd complet ou cible specifique + contexte libre)
+      3. Copie la commande dans le presse-papier pour que l'utilisateur la colle dans Claude Code
+      4. Lance une animation de progression simulee (requestAnimationFrame) :
+         - 8s pour une generation complete, 4s pour une regeneration partielle
+         - La barre de progression avance lineairement de 0 a 100%
+      5. A la fin, affiche un toast de confirmation */
+  function launchGeneration(target,context){
+    setGenTarget(target);
+    setGenerating(true);
+    setGenProgress(0);
+    upsert({id:state.id,bp:state.bp,clientName:state.clientName,clientWebsiteUrl:state.clientWebsiteUrl,canvaUrl:state.canvaUrl,activeLevers:state.activeLevers,claapUrl:state.claapUrl,pricing:state.pricing,dateR1:state.dateR1,dateR2:state.dateR2,status:'en_cours'});
+    let targetCmd = target==='all' ? cmd : `Relance l'analyse ${target} pour ${state.clientName}.\n${cmd}`;
+    if(context&&context.trim()) targetCmd+=`\n\nContexte supplémentaire : ${context.trim()}`;
+    copy(targetCmd,()=>toastFn(target==='all'?'Commande copiée':'Commande copiée pour '+target));
+    const duration=target==='all'?8000:4000;
+    const start=Date.now();
+    const tick=()=>{
+      const p=Math.min((Date.now()-start)/duration,1);
+      setGenProgress(p);
+      if(p<1) genTimerRef.current=requestAnimationFrame(tick);
+      else { setGenerating(false); toastFn(target==='all'?'Génération complète terminée':'Analyse '+target+' regénérée'); }
+    };
+    genTimerRef.current=requestAnimationFrame(tick);
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+      {/* Header */}
+      <div style={{padding:'24px 48px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div>
+            <h1 style={{fontSize:22,fontWeight:800,margin:0,letterSpacing:'-0.02em',display:'flex',alignItems:'center',gap:10}}>{state.clientWebsiteUrl&&logoUrl(state.clientWebsiteUrl)&&<img src={logoUrl(state.clientWebsiteUrl)} alt="" style={{width:24,height:24,borderRadius:5,objectFit:'contain',background:'#fff'}} onError={e=>{e.target.style.display='none';}}/>}{state.clientName ? <>Review — <span style={{color:'var(--accent)'}}>{state.clientName}</span></> : 'Review'}</h1>
+            <p style={{color:'var(--text-3)',marginTop:2,fontSize:13,margin:'2px 0 0'}}>{idx+1} / {total} — {isCtx?'Contexte client':current}</p>
+          </div>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            {generating&&<span style={{fontSize:12,color:'var(--accent)',fontWeight:600}}>Regénération {genTarget}…</span>}
+            <button className="btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setAllOpen(true)}>Tout ouvrir</button>
+            <button className="btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setAllOpen(false)}>Tout fermer</button>
+          </div>
+        </div>
+        {/* Generation progress */}
+        {generating&&(
+          <div style={{background:'var(--border)',borderRadius:3,height:3,overflow:'hidden',marginBottom:6}}>
+            <div style={{height:'100%',borderRadius:3,background:'var(--accent)',width:`${genProgress*100}%`,transition:'width 0.1s',boxShadow:'0 0 8px rgba(212,255,0,0.4)'}}/>
+          </div>
+        )}
+        {/* Review progress */}
+        <div style={{background:'var(--border)',borderRadius:3,height:4,overflow:'hidden'}}>
+          <div style={{height:'100%',borderRadius:3,background:'var(--accent)',width:`${reviewProgress}%`,transition:'width 0.3s',boxShadow:'0 0 6px rgba(212,255,0,0.4)'}}/>
+        </div>
+        {/* ── Dots de navigation ──
+            Un dot par card. Le dot actif est allonge (24px) et colore selon le levier
+            (ou accent pour le contexte). Les dots passes sont gris, les futurs sont sombres.
+            Chaque dot est cliquable pour naviguer directement a la card correspondante. */}
+        <div style={{display:'flex',gap:6,marginTop:8,justifyContent:'center'}}>
+          {cards.map((c,i)=>{
+            const isLever=c!=='contexte';
+            const lc=isLever?(LEVER_COLORS[c]||{bg:'#888'}):null;
+            return <div key={i} onClick={()=>setIdx(i)} style={{
+              width:i===idx?24:8,height:8,borderRadius:4,cursor:'pointer',transition:'all 0.2s',
+              background:i===idx?(lc?lc.bg:'var(--accent)'):i<idx?'var(--text-3)':'var(--border)'
+            }}/>;
+          })}
+        </div>
+      </div>
+
+      {/* Card content */}
+      <div style={{flex:1,overflow:'auto',padding:'24px 48px',display:'flex',justifyContent:'center'}}>
+        <div style={{width:'100%'}}>
+          {isCtx ? (
+            <>
+              <ContextCard key={'ctx-'+idx} forceOpen={allOpen} validateSignal={validateSignal} onRegenerate={readOnly?null:(target,ctx)=>launchGeneration(target,ctx)} validated={!!validatedMap['contexte']} onValidate={v=>setCardValidated('contexte',v)} onNext={()=>{const n=idx+1;if(n>=total){if(isComplete)dispatch({t:'STEP',n:4});}else setIdx(n);}}/>
+            </>
+          ) : (
+            <AnalysisCard key={'analysis-'+idx} lever={current} onRegenerate={readOnly?null:(l,ctx)=>launchGeneration(l,ctx)} forceOpen={allOpen} validateSignal={validateSignal} validated={!!validatedMap[current]} onValidate={v=>setCardValidated(current,v)} onNext={()=>{const n=idx+1;if(n>=total){if(isComplete)dispatch({t:'STEP',n:4});}else setIdx(n);}}/>
+          )}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{padding:'14px 48px',borderTop:'1px solid var(--border)',flexShrink:0,background:'var(--bg-nav)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <button className="btn-g" onClick={()=>idx>0?setIdx(i=>i-1):dispatch({t:'STEP',n:2})}>
+          {idx>0?'← Précédent':'← Leviers'}
+        </button>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {idx>=total-1&&!isComplete&&(()=>{
+            const firstIncomplete=!ctxComplete?0:state.activeLevers.findIndex(l=>{const a=state.analyses[l];return !a||!a.lectureBusiness||!a.lectureBusiness.trim();})+1;
+            return <span style={{fontSize:13,fontWeight:600,color:'var(--error)',background:'rgba(255,69,58,0.1)',padding:'5px 14px',borderRadius:6,display:'inline-flex',alignItems:'center',gap:8}}>Contenu incomplet <a onClick={()=>setIdx(firstIncomplete)} style={{color:'var(--accent)',textDecoration:'underline',cursor:'pointer',fontWeight:700,fontSize:14}}>Corriger</a></span>;
+          })()}
+          {!readOnly&&<button className="btn-g" onClick={()=>{upsert({...state,status:'brouillon'});window.location.href='index.html';}}>Enregistrer et quitter</button>}
+          <button className="btn-p" disabled={idx>=total-1&&!isComplete} onClick={()=>idx<total-1?setIdx(i=>i+1):isComplete&&dispatch({t:'STEP',n:4})}>
+            {idx<total-1?'Suivant →':'Continuer →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ÉTAPE 4 : Canva (injection dans la présentation)
+   - Mode idle : récapitulatif (client, template, leviers) + diff style git
+     des modifications à injecter (vert = ajout, rouge = suppression)
+     + bouton "Générer dans Canva" (ou "Mettre à jour" si historique)
+     + historique des lancements précédents
+   - Mode running : animation avec timer, progress bar, liste de tâches
+     séquentielles (4s chacune) : duplication template, find&replace,
+     injection contexte/screenshot, injection par levier, etc.
+   - Mode done : résumé + boutons recopier/ouvrir Canva/terminer
+   Le prompt Canva est copié dans le presse-papier au lancement.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/** Composant DiffSection — section collapsible dans la vue diff de l'etape Canva.
+    Affiche un en-tete cliquable (titre + tag levier optionnel) et un contenu
+    monospace avec les lignes de diff (vert = ajout, rouge = suppression).
+    expandSignal : valeur partagee par le parent pour ouvrir (>0) ou fermer (<0)
+    toutes les sections simultanement via les boutons "Tout ouvrir / Tout fermer". */
+function DiffSection({title,tag,expandSignal,children}) {
+  const [open,setOpen]=useState(true);
+  useEffect(()=>{if(expandSignal>0)setOpen(true);if(expandSignal<0)setOpen(false);},[expandSignal]);
+  return (
+    <div style={{marginBottom:8}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',marginBottom:open?4:0}} onClick={()=>setOpen(o=>!o)}>
+        <span style={{fontSize:10,color:'var(--text-3)',transition:'transform 0.2s',transform:open?'rotate(90deg)':'rotate(0)'}}>▶</span>
+        {tag}
+        <span style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{title}</span>
+        <span style={{fontSize:10,color:'var(--text-3)'}}>{open?'':'…'}</span>
+      </div>
+      {open&&<div style={{fontFamily:'monospace',fontSize:12,lineHeight:1.8}}>{children}</div>}
+    </div>
+  );
+}
+
+/** StepCanva — Composant principal de l'etape 4 (injection Canva).
+    Trois phases d'interface :
+    - 'idle'    : recapitulatif + diff visuel + historique + bouton "Generer dans Canva"
+    - 'running' : animation sequentielle des taches (duplication, find&replace, injection...)
+    - 'done'    : resume + liens Canva + boutons recopier/terminer
+
+    Le prompt Canva (canvaPrompt) est un texte structure qui decrit toutes les actions
+    a realiser dans Claude Code pour mettre a jour la presentation Canva. Il est copie
+    dans le presse-papier au lancement de la generation.
+
+    L'historique (history) garde une trace de chaque generation avec un snapshot complet
+    du JSON au moment du lancement, permettant de comparer les versions. */
+function StepCanva({toastFn}) {
+  const {state,dispatch,readOnly}=useR2();
+  const json=buildJSON(state);
+  const jsonStr=JSON.stringify(json,null,2);
+  const [phase,setPhase]=useState('idle');   // Phase d'interface : idle | running | done
+  const [diffExpand,setDiffExpand]=useState(0); // Signal expand/collapse pour les sections de diff
+  const [viewHistoryIdx,setViewHistoryIdx]=useState(null); // Index de l'entree d'historique ouverte en detail (null = aucune)
+
+  // Vérifie si le contenu est complet pour autoriser le lancement
+  const ctxOk=(()=>{const c=state.contextSummary||{};return Object.values(c).filter(v=>v&&v.trim()).length>=3;})();
+  const analysesOk=state.activeLevers.every(l=>{const a=state.analyses[l];return a&&a.lectureBusiness&&a.lectureBusiness.trim();});
+  const isComplete=ctxOk&&analysesOk;
+  const [taskIdx,setTaskIdx]=useState(0);   // Index de la tache animee en cours (0 = premiere)
+  const [elapsed,setElapsed]=useState(0);   // Temps ecoule en ms depuis le debut de la generation
+  /* ── Historique des generations ──
+     Initialise avec 2 entrees fictives basees sur les dates de la prez pour
+     donner l'illusion d'un historique existant. Chaque entree contient :
+     - date      : horodatage ISO de la generation
+     - levers    : leviers actifs au moment du lancement
+     - status    : 'running' | 'done'
+     - duration  : duree en ms (renseignee quand status passe a 'done')
+     - snapshot  : copie du JSON complet a ce moment (pour la vue diff retrospective) */
+  const [history,setHistory]=useState(()=>{
+    const d1 = state.dateR2 || state.dateR1 || state.createdAt?.slice(0,10) || '2026-03-20';
+    const d2 = state.dateR1 || state.createdAt?.slice(0,10) || '2026-03-15';
+    return [
+      {date:new Date(d1+'T14:30:00Z').toISOString(), levers:[...state.activeLevers], status:'done', duration:34200, snapshot:json},
+      {date:new Date(d2+'T16:45:00Z').toISOString(), levers:state.activeLevers.slice(0,2), status:'done', duration:26800, snapshot:json},
+    ];
+  });
+  const timerRef=useRef(null);
+  const startRef=useRef(null);
+
+  const inactiveList = json.slides.inactive.length>0 ? json.slides.inactive.join(', ') : '(aucune)';
+
+  /* ── canvaPrompt : prompt structure pour Claude Code ──────────────────
+     Texte copie dans le presse-papier au clic sur "Generer dans Canva".
+     L'utilisateur le colle ensuite dans Claude Code qui execute les actions
+     via les outils MCP (Canva, Claap, etc.). Structure en 6 etapes :
+     1. Duplication du template Canva source
+     2. Find & Replace de "XXX" par le nom du client
+     3. Injection du contexte client (entreprise, enjeux, challenges)
+     4. Injection des analyses par levier (notes + sous-scores + descriptions)
+     5. Suppression des slides desactivees
+     6. Verification finale de coherence
+     Le JSON complet est inclus a la fin pour reference. */
+  const canvaPrompt=`Tu es un assistant qui met à jour une présentation Canva pour Bulldozer Collective.
+
+## Présentation cible
+- Client : ${state.clientName}
+- URL Canva : ${state.canvaUrl || 'Template ID: ' + state.canvaTemplateId}
+- Business Partner : ${state.bp}
+
+## Actions à réaliser (dans l'ordre)
+
+### 1. Dupliquer le template
+Utilise le MCP Canva pour dupliquer le design source et travailler sur la copie.
+
+### 2. Find & Replace
+Remplace toutes les occurrences de "XXX" par "${state.clientName}" dans l'ensemble de la présentation.
+
+### 3. Injection du contexte client (slides ~8-9)
+${json.content.context_summary.entreprise ? '- Entreprise : ' + json.content.context_summary.entreprise : '- Entreprise : (vide)'}
+${json.content.context_summary.enjeux ? '- Enjeux : ' + json.content.context_summary.enjeux : '- Enjeux : (vide)'}
+${json.content.context_summary.challenges ? '- Challenges : ' + json.content.context_summary.challenges : '- Challenges : (vide)'}
+
+### 4. Injection des analyses par levier
+${state.activeLevers.map(l=>{const a=json.content.analyses[l];if(!a)return `#### ${l}\n(non générée)`;return `#### ${l} — Note : ${a.note_globale}/10\nLecture business : ${a.lecture_business}\n${a.sous_scores.map(ss=>`- ${ss.nom} : ${ss.note}/10 — ${ss.description}`).join('\n')}`;}).join('\n\n')}
+
+### 5. Slides à supprimer
+${inactiveList}
+
+### 6. Vérification finale
+Vérifie que toutes les slides sont cohérentes, qu'il n'y a plus de "XXX" et que les notes sont bien injectées.
+
+## JSON complet
+\`\`\`json
+${jsonStr}
+\`\`\``;
+
+  /* Liste des taches affichees dans l'animation de generation (phase 'running').
+     Chaque tache dure STEP_DURATION ms (4s) et est animee sequentiellement.
+     Les taches par levier sont dynamiques (une par levier actif).
+     Le TDT (test de traction) n'est inclus que s'il est actif. */
+  const tasks=[
+    {label:'Duplication du template Canva',          icon:'📄'},
+    {label:`Find & Replace "XXX" → "${state.clientName}"`, icon:'🔤'},
+    {label:'Injection du contexte client (slide 9)',  icon:'📋'},
+    ...state.activeLevers.map(l=>({label:`Injection analyse ${l}`, icon:LEVER_ICONS[l]||'📊', lever:l})),
+    ...(!state.inactiveSections.includes('test_traction')?[{label:'Injection du Test de traction', icon:'🧪'}]:[]),
+    {label:'Suppression des slides désactivées',      icon:'✂️'},
+    {label:'Vérification finale de cohérence',        icon:'✅'},
+  ];
+
+  const STEP_DURATION=4000; // Duree de chaque tache animee en ms
+
+  useEffect(()=>{
+    if(phase!=='running') return;
+    startRef.current=Date.now();
+    const tick=()=>{
+      const now=Date.now();
+      const total=now-startRef.current;
+      setElapsed(total);
+      const idx=Math.min(Math.floor(total/STEP_DURATION),tasks.length);
+      setTaskIdx(idx);
+      if(idx>=tasks.length){
+        setPhase('done');
+      } else {
+        timerRef.current=requestAnimationFrame(tick);
+      }
+    };
+    timerRef.current=requestAnimationFrame(tick);
+    return()=>{if(timerRef.current) cancelAnimationFrame(timerRef.current);};
+  },[phase]);
+
+  /** Lance l'injection Canva :
+      1. Copie le prompt complet dans le presse-papier
+      2. Ajoute une entree d'historique en statut 'running' avec un snapshot du JSON actuel
+      3. Demarre l'animation de progression (phase 'running') */
+
+  /* ── Raccourcis clavier Step 4 ──
+     Enter ou ArrowRight declenchent deux actions selon la phase :
+     - phase 'idle' + contenu complet + pas readOnly : lance la generation (launch())
+     - phase 'done' : enregistre la prez comme 'terminee', marque isExisting=true
+       (pour desactiver le beforeunload), puis redirige vers le dashboard.
+     Desactive dans les champs de saisie pour ne pas interferer avec l'edition. */
+  useEffect(()=>{
+    const h=e=>{
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+      if(e.key==='Enter'||e.key==='ArrowRight'){
+        e.preventDefault();
+        if(phase==='idle'&&isComplete&&!readOnly) launch();
+        if(phase==='done'){upsert({...state,status:'terminee'});setIsExisting(true);window.location.href='index.html';}
+      }
+    };
+    window.addEventListener('keydown',h);
+    return()=>window.removeEventListener('keydown',h);
+  },[phase,isComplete,readOnly]);
+
+  function launch(){
+    copy(canvaPrompt,()=>toastFn('Prompt copié — collez-le dans Claude'));
+    setPhase('running');
+    setTaskIdx(0);
+    setElapsed(0);
+    setHistory(h=>[{date:new Date().toISOString(),levers:[...state.activeLevers],status:'running',snapshot:json},...h]);
+  }
+
+  /* Quand l'animation se termine (phase passe a 'done'), met a jour la premiere
+     entree de l'historique (celle en 'running') avec la duree reelle et le statut 'done'.
+     Marque aussi la presentation comme 'terminee' dans le localStorage. */
+  useEffect(()=>{
+    if(phase==='done'&&history.length>0&&history[0].status==='running'){
+      setHistory(h=>[{...h[0],status:'done',duration:elapsed},...h.slice(1)]);
+      upsert({id:state.id,status:'terminee'});
+    }
+  },[phase]);
+
+  const fmtTimer=(ms)=>{const s=Math.floor(ms/1000);const m=Math.floor(s/60);return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
+
+  return (
+    <div style={{padding:'48px 48px',minHeight:'100%',display:'flex',flexDirection:'column'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:24}}>
+        <div>
+          <h1 style={{fontSize:22,fontWeight:800,margin:0,letterSpacing:'-0.02em',display:'flex',alignItems:'center',gap:10}}>{state.clientWebsiteUrl&&logoUrl(state.clientWebsiteUrl)&&<img src={logoUrl(state.clientWebsiteUrl)} alt="" style={{width:24,height:24,borderRadius:5,objectFit:'contain',background:'#fff'}} onError={e=>{e.target.style.display='none';}}/>}{state.clientName ? <>Canva — <span style={{color:'var(--accent)'}}>{state.clientName}</span></> : 'Canva'}</h1>
+          <p style={{color:'var(--text-3)',marginTop:6,fontSize:15,margin:'6px 0 0'}}>
+            {phase==='idle'?'Injectez le contenu validé dans la présentation Canva.':phase==='done'?'Injection terminée.':'Injection en cours...'}
+          </p>
+        </div>
+        {phase!=='idle'&&(
+          <div style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:phase==='done'?'#32D74B':'var(--accent)',boxShadow:phase==='running'?'0 0 8px rgba(212,255,0,0.6)':undefined,animation:phase==='running'?'pulse 1.5s ease infinite':undefined}}/>
+            <span style={{fontFamily:'"SF Mono","Fira Code",monospace',fontSize:18,fontWeight:700,color:phase==='done'?'#32D74B':'var(--text)',letterSpacing:'0.05em'}}>{fmtTimer(elapsed)}</span>
+          </div>
+        )}
+      </div>
+
+      {phase==='idle' ? (
+        <>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
+            {/* Left — Récap */}
+            <div className="card" style={{padding:'12px 16px'}}>
+              <div style={{fontWeight:700,marginBottom:10,fontSize:15}}>Récapitulatif</div>
+              <div style={{display:'flex',gap:20,alignItems:'flex-start',marginBottom:12}}>
+                <div>
+                  <span style={{fontSize:11,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.07em'}}>Client</span>
+                  <div style={{fontSize:14,fontWeight:600,marginTop:2,display:'flex',alignItems:'center',gap:6}}>
+                    {state.clientWebsiteUrl&&logoUrl(state.clientWebsiteUrl)&&<img src={logoUrl(state.clientWebsiteUrl)} alt="" style={{width:18,height:18,borderRadius:4,objectFit:'contain',background:'#fff'}} onError={e=>{e.target.style.display='none';}}/>}
+                    {state.clientName||'—'}
+                  </div>
+                </div>
+                <div>
+                  <span style={{fontSize:11,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.07em'}}>Template</span>
+                  <div style={{fontSize:14,fontWeight:600,marginTop:2}}>{state.canvaUrl?'Lien Canva':state.canvaTemplateId||'—'}</div>
+                </div>
+              </div>
+              <div style={{marginBottom:10}}>
+                <span style={{fontSize:11,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.07em'}}>Leviers</span>
+                <div style={{display:'flex',gap:3,flexWrap:'wrap',marginTop:4}}>
+                  {state.activeLevers.map(l=>{const lc=LEVER_COLORS[l]||{bg:'rgba(255,255,255,0.08)',color:'var(--text-2)'};return <span key={l} style={{fontSize:11,fontWeight:700,padding:'2px 6px',borderRadius:3,background:lc.bg,color:lc.color,fontFamily:'"SF Mono",monospace'}}>{l}</span>;})}
+                </div>
+              </div>
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:10,display:'flex',gap:8}}>
+                <button className="btn-g" style={{flex:1,justifyContent:'center'}} onClick={()=>copy(jsonStr,()=>toastFn('JSON copié !'))}>Copier le JSON</button>
+              </div>
+
+              {/* ── Checklist "Ce qu'il vous reste à faire" ──
+                  Liste mixte d'actions automatisees (done:true, en vert) et manuelles (done:false, en orange).
+                  Sert de pense-bete pour le BP : les taches vertes sont deja realisees par Claude,
+                  les taches orange restent a faire a la main dans Canva (use cases, pricing, relecture).
+                  isComplete gate le bouton "Generer dans Canva" plus bas : si le contenu est incomplet,
+                  le bouton est desactive et un badge "Contenu incomplet" avec lien "Corriger" s'affiche. */}
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:10,marginTop:10}}>
+                <div style={{fontSize:11,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:6}}>Ce qu'il vous reste à faire</div>
+                {[
+                  {done:true,  label:'Contexte client rédigé'},
+                  {done:true,  label:'Analyses par levier complétées'},
+                  {done:true,  label:'Screenshots préaudit capturés'},
+                  {done:false, label:'Choisir les use cases (×6)'},
+                  {done:false, label:'Importer les screenshots dans Canva'},
+                  {done:false, label:'Compléter pricing & projection (manuel)'},
+                  {done:false, label:'Relecture finale'},
+                  {done:true,  label:'Date R2 & next steps (via Claap R1)'},
+                ].map((a,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
+                    <div style={{width:20,height:20,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,
+                      background:a.done?'rgba(50,215,75,0.15)':'rgba(255,159,10,0.12)',
+                      border:`1.5px solid ${a.done?'#32D74B':'#FF9F0A'}`,
+                      color:a.done?'#32D74B':'#FF9F0A'}}>
+                      <span style={{fontFamily:'system-ui'}}>{a.done?'✓':'!'}</span>
+                    </div>
+                    <span style={{fontSize:13,color:a.done?'var(--text-2)':'var(--text)'}}>{a.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Screenshots du préaudit — générés automatiquement par Claude */}
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:10,marginTop:10}}>
+                <div style={{fontSize:11,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:6}}>Screenshots préaudit</div>
+                <p style={{fontSize:12,color:'var(--text-3)',margin:'0 0 8px'}}>Les screenshots du préaudit ont été générés automatiquement. Téléchargez-les pour les importer dans Canva.</p>
+                <button className="btn-p" style={{width:'100%',justifyContent:'center',marginBottom:10}} onClick={async()=>{
+                  toastFn('Téléchargement en cours…');
+                  try {
+                    const files=[
+                      {name:'screenshot-SEO.png', url:'slides-thumbs/00-screenshot-SEO.png'},
+                      {name:'screenshot-SEA.png', url:'slides-thumbs/00-screenshot-SEA.png'},
+                      {name:'screenshot-linkedin.png', url:'slides-thumbs/00-screenshot-linkedin.png'},
+                    ];
+                    const JSZip=(await import('https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js')).default||window.JSZip;
+                    const zip=new JSZip();
+                    for(const f of files){
+                      const resp=await fetch(f.url);
+                      const blob=await resp.blob();
+                      zip.file(f.name,blob);
+                    }
+                    const content=await zip.generateAsync({type:'blob'});
+                    const url=URL.createObjectURL(content);
+                    window.open(url,'_blank');
+                    toastFn('ZIP téléchargé');
+                  }catch(e){
+                    // Fallback : télécharger les images une par une
+                    ['slides-thumbs/00-screenshot-SEO.png','slides-thumbs/00-screenshot-SEA.png','slides-thumbs/00-screenshot-linkedin.png'].forEach(url=>{
+                      const a=document.createElement('a');a.href=url;a.download=url.split('/').pop();a.click();
+                    });
+                    toastFn('Screenshots téléchargés (individuellement)');
+                  }
+                }}>
+                  Télécharger les screenshots (.zip)
+                </button>
+                {/* Aperçu des screenshots réels du préaudit Bulldozer */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
+                  {[
+                    {label:'SEO',lever:'SEO',src:'slides-thumbs/00-screenshot-SEO.png'},
+                    {label:'SEA',lever:'Google Ads',src:'slides-thumbs/00-screenshot-SEA.png'},
+                    {label:'LinkedIn',lever:'LinkedIn Ads',src:'slides-thumbs/00-screenshot-linkedin.png'},
+                  ].map(s=>{
+                    const lc=LEVER_COLORS[s.lever]||{bg:'#555',color:'#fff'};
+                    return (
+                      <div key={s.label} style={{position:'relative'}}>
+                        <img src={s.src} alt={s.label} style={{width:'100%',borderRadius:5,border:'1px solid var(--border)',display:'block'}}/>
+                        <span style={{position:'absolute',bottom:3,left:3,fontSize:8,fontWeight:700,padding:'1px 4px',borderRadius:3,background:lc.bg,color:lc.color,fontFamily:'monospace'}}>{s.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Right — Diff par section avec toggle */}
+            <div className="card" style={{padding:'12px 16px',overflow:'auto',maxHeight:'100%'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                <div style={{fontWeight:700,fontSize:15}}>Modifications par section</div>
+                <div style={{display:'flex',gap:6}}>
+                  <button className="btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setDiffExpand(s=>Math.abs(s)+1)}>Tout ouvrir</button>
+                  <button className="btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setDiffExpand(s=>-(Math.abs(s)+1))}>Tout fermer</button>
+                </div>
+              </div>
+
+              {/* Find & Replace */}
+              <DiffSection title="Find & Replace" expandSignal={diffExpand}>
+                <div style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',borderRadius:'0 4px 4px 0'}}><span style={{color:'#32D74B'}}>+</span> "XXX" → "{state.clientName}"</div>
+              </DiffSection>
+
+              {/* Contexte client */}
+              <DiffSection title="Contexte client" tag={<span style={{fontSize:16}}>📋</span>} expandSignal={diffExpand}>
+                {(()=>{const ctx=state.contextSummary||{}; return ['entreprise','enjeux','challenges'].map(f=>{
+                  const v=ctx[f]?.trim();
+                  return v ? (
+                    <div key={f} style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                      <span style={{color:'#32D74B'}}>+</span> <span style={{color:'var(--text-3)'}}>{f}:</span> <span style={{color:'var(--text-2)'}}>{v.length>55?v.slice(0,55)+'…':v}</span>
+                    </div>
+                  ) : (
+                    <div key={f} style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                      <span style={{color:'#FF453A'}}>−</span> <span style={{color:'var(--text-3)'}}>{f}:</span> <span style={{color:'#FF453A',fontStyle:'italic'}}>vide</span>
+                    </div>
+                  );
+                });})()}
+              </DiffSection>
+
+              {/* Section par levier */}
+              {state.activeLevers.map(l=>{
+                const a=state.analyses[l];
+                const lc=LEVER_COLORS[l]||{bg:'#555',color:'#fff'};
+                return (
+                  <DiffSection key={l} title={a?`${a.noteGlobale}/10`:''} tag={<span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:3,background:lc.bg,color:lc.color,fontFamily:'monospace'}}>{l}</span>} expandSignal={diffExpand}>
+                    {!a ? (
+                      <div style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',borderRadius:'0 4px 4px 0'}}>
+                        <span style={{color:'#FF453A'}}>−</span> <span style={{fontStyle:'italic'}}>analyse non générée</span>
+                      </div>
+                    ) : (<>
+                      <div style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                        <span style={{color:'#32D74B'}}>+</span> <span style={{color:'var(--text-3)'}}>note:</span> <span style={{color:'var(--text-2)'}}>{a.noteGlobale}/10</span>
+                      </div>
+                      {a.lectureBusiness?.trim() ? (
+                        <div style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                          <span style={{color:'#32D74B'}}>+</span> <span style={{color:'var(--text-3)'}}>lecture:</span> <span style={{color:'var(--text-2)'}}>{a.lectureBusiness.length>50?a.lectureBusiness.slice(0,50)+'…':a.lectureBusiness}</span>
+                        </div>
+                      ) : (
+                        <div style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                          <span style={{color:'#FF453A'}}>−</span> <span style={{color:'var(--text-3)'}}>lecture:</span> <span style={{color:'#FF453A',fontStyle:'italic'}}>vide</span>
+                        </div>
+                      )}
+                      {a.sousScores.map(ss=>(
+                        ss.description?.trim() ? (
+                          <div key={ss.nom} style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                            <span style={{color:'#32D74B'}}>+</span> <span style={{color:'var(--text-3)'}}>{ss.nom}:</span> <span style={{color:'var(--text-2)'}}>{ss.note}/10 — {ss.description.length>35?ss.description.slice(0,35)+'…':ss.description}</span>
+                          </div>
+                        ) : (
+                          <div key={ss.nom} style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                            <span style={{color:'#FF453A'}}>−</span> <span style={{color:'var(--text-3)'}}>{ss.nom}:</span> <span style={{color:'#FF453A',fontStyle:'italic'}}>vide</span>
+                          </div>
+                        )
+                      ))}
+                    </>)}
+                  </DiffSection>
+                );
+              })}
+
+              {/* Slides supprimées */}
+              {json.slides.inactive.length>0&&(
+                <DiffSection title={`Slides supprimées (${json.slides.inactive.length})`} expandSignal={diffExpand}>
+                  {json.slides.inactive.map(s=>(
+                    <div key={s} style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                      <span style={{color:'#FF453A'}}>−</span> <span style={{color:'var(--text-3)'}}>{s}</span>
+                    </div>
+                  ))}
+                </DiffSection>
+              )}
+            </div>
+          </div>
+
+          {/* Barre d'actions : navigation + CTA Canva */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 0',borderBottom:'1px solid var(--border)',marginBottom:16}}>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn-g" onClick={()=>dispatch({t:'STEP',n:3})}>← Review</button>
+              <button className="btn-g" onClick={()=>{upsert({...state,status:'brouillon'});window.location.href='index.html';}}>Enregistrer et quitter</button>
+            </div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              {!isComplete&&<span style={{fontSize:13,fontWeight:600,color:'var(--error)',background:'rgba(255,69,58,0.1)',padding:'5px 14px',borderRadius:6,display:'inline-flex',alignItems:'center',gap:8}}>Contenu incomplet <a onClick={()=>dispatch({t:'STEP',n:3})} style={{color:'var(--accent)',textDecoration:'underline',cursor:'pointer',fontWeight:700,fontSize:14}}>Corriger</a></span>}
+              <button className="btn-p" onClick={launch} disabled={!isComplete||readOnly}
+                style={{padding:'10px 24px',boxShadow:isComplete?'0 0 20px rgba(212,255,0,0.15)':'none'}}>
+                {history.length>0?'Mettre à jour dans Canva':'Générer dans Canva'}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Historique des générations avec diff cliquable ──
+              Chaque entrée d'historique est cliquable (viewHistoryIdx toggle).
+              Au clic, affiche le snapshot complet du JSON au moment du lancement
+              sous forme de diff visuel (mêmes lignes vertes/rouges que la vue principale).
+              Le snapshot est une copie figée du JSON — il ne change pas si on modifie
+              ensuite le contenu, ce qui permet de comparer les versions entre elles. */}
+          {history.length>0&&(
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>Historique des générations</div>
+              {history.map((h,i)=>(
+                <div key={i}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:viewHistoryIdx===i?'var(--accent-bg)':'var(--bg-card)',border:`1px solid ${viewHistoryIdx===i?'rgba(212,255,0,0.2)':'var(--border)'}`,borderRadius:6,marginBottom:4,cursor:'pointer',transition:'all 0.12s'}}
+                    onClick={()=>setViewHistoryIdx(viewHistoryIdx===i?null:i)}>
+                    <div style={{width:8,height:8,borderRadius:'50%',background:h.status==='done'?'#32D74B':'var(--accent)',flexShrink:0}}/>
+                    <span style={{fontSize:13,color:'var(--text-2)',flex:1}}>
+                      {new Date(h.date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                    </span>
+                    <span style={{fontSize:12,color:'var(--text-3)'}}>{h.levers.join(', ')}</span>
+                    {h.duration&&<span style={{fontSize:12,fontFamily:'monospace',color:'var(--text-3)'}}>{fmtTimer(h.duration)}</span>}
+                    <span style={{fontSize:12,fontWeight:600,color:h.status==='done'?'#32D74B':'var(--accent)'}}>{h.status==='done'?'Terminé':'En cours'}</span>
+                    <span style={{fontSize:10,color:'var(--text-3)',transform:viewHistoryIdx===i?'rotate(90deg)':'rotate(0)',transition:'transform 0.2s'}}>▶</span>
+                  </div>
+                  {/* Détail du diff pour cet historique */}
+                  {viewHistoryIdx===i&&h.snapshot&&(
+                    <div style={{margin:'0 0 8px 18px',padding:'10px 14px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:6,fontFamily:'monospace',fontSize:12,lineHeight:1.8}}>
+                      {/* Find & Replace */}
+                      <div style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                        <span style={{color:'#32D74B'}}>+</span> "XXX" → "{h.snapshot.client.name}"
+                      </div>
+                      {/* Contexte */}
+                      {['entreprise','enjeux','challenges'].map(f=>{
+                        const v=h.snapshot.content.context_summary[f]?.trim();
+                        return v ? (
+                          <div key={f} style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                            <span style={{color:'#32D74B'}}>+</span> <span style={{color:'var(--text-3)'}}>contexte.{f}:</span> <span style={{color:'var(--text-2)'}}>{v.length>50?v.slice(0,50)+'…':v}</span>
+                          </div>
+                        ) : (
+                          <div key={f} style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                            <span style={{color:'#FF453A'}}>−</span> <span style={{color:'var(--text-3)'}}>contexte.{f}:</span> <span style={{color:'#FF453A',fontStyle:'italic'}}>vide</span>
+                          </div>
+                        );
+                      })}
+                      {/* Analyses */}
+                      {Object.entries(h.snapshot.content.analyses).map(([l,a])=>{
+                        const lc=LEVER_COLORS[l]||{bg:'#555',color:'#fff'};
+                        return (<React.Fragment key={l}>
+                          <div style={{padding:'4px 0 2px',fontSize:11,fontWeight:700,color:'var(--text-2)',display:'flex',alignItems:'center',gap:4,marginTop:4}}>
+                            <span style={{padding:'1px 4px',borderRadius:3,background:lc.bg,color:lc.color}}>{l}</span> {a.note_globale}/10
+                          </div>
+                          {a.lecture_business?.trim()&&(
+                            <div style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                              <span style={{color:'#32D74B'}}>+</span> <span style={{color:'var(--text-2)'}}>{a.lecture_business.length>55?a.lecture_business.slice(0,55)+'…':a.lecture_business}</span>
+                            </div>
+                          )}
+                          {a.sous_scores.map(ss=>(
+                            ss.description?.trim() ? (
+                              <div key={ss.nom} style={{padding:'2px 8px',background:'rgba(50,215,75,0.08)',borderLeft:'3px solid #32D74B',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                                <span style={{color:'#32D74B'}}>+</span> <span style={{color:'var(--text-3)'}}>{ss.nom}:</span> <span style={{color:'var(--text-2)'}}>{ss.note}/10 — {ss.description.length>35?ss.description.slice(0,35)+'…':ss.description}</span>
+                              </div>
+                            ) : (
+                              <div key={ss.nom} style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                                <span style={{color:'#FF453A'}}>−</span> <span style={{color:'var(--text-3)'}}>{ss.nom}:</span> <span style={{color:'#FF453A',fontStyle:'italic'}}>vide</span>
+                              </div>
+                            )
+                          ))}
+                        </React.Fragment>);
+                      })}
+                      {/* Slides supprimées */}
+                      {h.snapshot.slides.inactive.length>0&&(
+                        <div style={{marginTop:4}}>
+                          {h.snapshot.slides.inactive.map(s=>(
+                            <div key={s} style={{padding:'2px 8px',background:'rgba(255,69,58,0.06)',borderLeft:'3px solid #FF453A',marginBottom:1,borderRadius:'0 4px 4px 0'}}>
+                              <span style={{color:'#FF453A'}}>−</span> <span style={{color:'var(--text-3)'}}>slide: {s}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Progress bar */}
+          <div style={{background:'var(--bg-input)',borderRadius:4,height:4,marginBottom:20,overflow:'hidden'}}>
+            <div style={{height:'100%',borderRadius:4,background:phase==='done'?'#32D74B':'var(--accent)',width:`${Math.min((taskIdx/tasks.length)*100,100)}%`,transition:'width 0.3s',boxShadow:phase==='running'?'0 0 8px rgba(212,255,0,0.4)':undefined}}/>
+          </div>
+
+          {/* Task list */}
+          <div className="card" style={{flex:1,overflow:'auto',padding:0}}>
+            {tasks.map((t,i)=>{
+              const done=i<taskIdx;
+              const active=i===taskIdx&&phase==='running';
+              const pending=i>taskIdx;
+              const lc=t.lever?LEVER_COLORS[t.lever]:null;
+              return (
+                <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:i<tasks.length-1?'1px solid var(--border)':'none',opacity:pending?0.3:1,transition:'opacity 0.3s',background:active?'rgba(212,255,0,0.04)':'transparent'}}>
+                  <div style={{width:24,height:24,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,
+                    background:done?'rgba(50,215,75,0.15)':active?(lc?lc.bg+'22':'rgba(212,255,0,0.12)'):'var(--bg-input)',
+                    border:`1.5px solid ${done?'#32D74B':active?(lc?lc.bg:'var(--accent)'):'var(--border)'}`,
+                    color:done?'#32D74B':active?(lc?lc.bg:'var(--accent)'):'var(--text-3)'}}>
+                    {done?'✓':t.icon}
+                  </div>
+                  <span style={{flex:1,fontSize:14,fontWeight:active?700:500,color:done?'var(--text-2)':active?'var(--text)':'var(--text-3)'}}>
+                    {t.label}
+                    {active&&<span className="dot-loader" style={{marginLeft:8,color:lc?lc.bg:'var(--accent)',fontSize:12}}><span/><span/><span/></span>}
+                  </span>
+                  {done&&<span style={{fontSize:12,color:'#32D74B'}}>✓</span>}
+                  {active&&<span style={{fontSize:12,color:'var(--text-3)',fontFamily:'monospace'}}>{Math.ceil((STEP_DURATION-(elapsed%STEP_DURATION))/1000)}s</span>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Historique sous la task list */}
+          {phase==='done'&&history.length>0&&(
+            <div style={{marginTop:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>Historique des générations</div>
+              {history.map((h,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:6,marginBottom:6}}>
+                  <div style={{width:8,height:8,borderRadius:'50%',background:h.status==='done'?'#32D74B':'var(--accent)',flexShrink:0}}/>
+                  <span style={{fontSize:13,color:'var(--text-2)',flex:1}}>
+                    {new Date(h.date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                  </span>
+                  <span style={{fontSize:12,color:'var(--text-3)'}}>{h.levers.join(', ')}</span>
+                  {h.duration&&<span style={{fontSize:12,fontFamily:'monospace',color:'var(--text-3)'}}>{fmtTimer(h.duration)}</span>}
+                  <span style={{fontSize:12,fontWeight:600,color:h.status==='done'?'#32D74B':'var(--accent)'}}>{h.status==='done'?'Terminé':'En cours'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Lien Canva toujours visible pendant et après la génération */}
+          {state.canvaUrl&&phase==='running'&&(
+            <div style={{marginTop:12,textAlign:'center'}}>
+              <a href={state.canvaUrl} target="_blank" className="btn-s" style={{textDecoration:'none'}}>Ouvrir la présentation Canva (Cmd+Clic)</a>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{marginTop:16,padding:'14px 0 0',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <button className="btn-g" onClick={()=>dispatch({t:'STEP',n:3})}>← Review</button>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              {phase==='done'&&<button className="btn-g" onClick={()=>setPhase('idle')}>Relancer</button>}
+              {phase==='done'&&<button className="btn-g" onClick={()=>copy(canvaPrompt,()=>toastFn('Recopié !'))}>Recopier le prompt</button>}
+              {phase==='done'&&state.canvaUrl&&<a href={state.canvaUrl} target="_blank" className="btn-s" style={{textDecoration:'none'}}>Ouvrir Canva</a>}
+              <button className="btn-p" onClick={()=>{upsert({...state,status:'terminee'});setIsExisting(true);window.location.href='index.html';}}>Terminer</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ÉCRAN DE TRANSITION : FetchingScreen (entre Step 1 et Step 2)
+   Animation simulant la récupération des données avant la sélection des leviers :
+   1. Lecture du transcript Claap R1
+   2. Analyse des leviers à activer
+   3. Vérification de l'agenda pour la date R2
+   Chaque phase dure quelques secondes avec une barre de progression animée.
+   À la fin, redirige automatiquement vers Step 2.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function FetchingScreen({clientName, claapUrl, onDone}) {
+  const [phase,setPhase]=useState(0);   // 0 = script R1, 1 = leviers, 2 = agenda
+  const [progress,setProgress]=useState(0);
+  const frameRef=useRef(null);
+  const startRef=useRef(null);
+
+  const phases=[
+    { label:'Lecture du transcript Claap R1',        sub:`Récupération de ${claapUrl||'...'}`,                  duration:3500, icon:'📼', color:'#C8F040' },
+    { label:'Récupération des next steps',           sub:'Date R2, actions à mener, points de vigilance',       duration:2500, icon:'📅', color:'#D0A0FF' },
+    { label:'Analyse des leviers identifiés',        sub:'Détection des opportunités & priorités par levier',   duration:4000, icon:'🤖', color:'#70D8D0' },
+    { label:'Récupération du préaudit',              sub:'Import des données depuis le rapport Bulldozer',      duration:3000, icon:'📊', color:'#80C8FF' },
+    { label:'Capture des screenshots préaudit',      sub:'SEO, SEA, LinkedIn Ads — pages du rapport',          duration:2500, icon:'🖼', color:'#FF9870' },
+  ];
+
+  useEffect(()=>{
+    if(phase>=phases.length){onDone();return;}
+    startRef.current=Date.now();
+    const tick=()=>{
+      const p=Math.min((Date.now()-startRef.current)/phases[phase].duration,1);
+      setProgress(p);
+      if(p<1){ frameRef.current=requestAnimationFrame(tick); }
+      else { setPhase(ph=>ph+1); setProgress(0); }
+    };
+    frameRef.current=requestAnimationFrame(tick);
+    return()=>{ if(frameRef.current) cancelAnimationFrame(frameRef.current); };
+  },[phase]);
+
+  const cur=phases[Math.min(phase,phases.length-1)];
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',padding:'48px'}}>
+      {/* Client name */}
+      <div style={{marginBottom:48,textAlign:'center'}}>
+        <div style={{fontSize:14,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10}}>Analyse en cours</div>
+        <h1 style={{fontSize:34,fontWeight:800,margin:0,letterSpacing:'-0.02em'}}>
+          <span style={{color:'var(--accent)'}}>{clientName}</span>
+        </h1>
+      </div>
+
+      {/* Phase list */}
+      <div style={{width:'100%',maxWidth:520}}>
+        {phases.map((ph,i)=>{
+          const done=i<phase;
+          const active=i===phase&&phase<phases.length;
+          return (
+            <div key={i} style={{marginBottom:20,opacity:i>phase?0.3:1,transition:'opacity 0.4s'}}>
+              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:active?8:0}}>
+                <div style={{width:36,height:36,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,
+                  background:done?'rgba(50,215,75,0.12)':active?ph.color+'22':'var(--bg-card)',
+                  border:`2px solid ${done?'#32D74B':active?ph.color:'var(--border)'}`,
+                  transition:'all 0.3s'}}>
+                  {done ? <span style={{color:'#32D74B',fontWeight:800,fontSize:14}}>✓</span> : ph.icon}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:18,fontWeight:active?700:500,color:done?'var(--text-2)':active?'var(--text)':'var(--text-3)',transition:'color 0.2s'}}>{ph.label}</div>
+                  {(active||done)&&<div style={{fontSize:14,color:'var(--text-3)',marginTop:2}}>{ph.sub}</div>}
+                </div>
+                {active&&<div style={{fontSize:14,color:'var(--text-3)',fontFamily:'monospace',flexShrink:0}}>
+                  {Math.ceil((1-progress)*ph.duration/1000)}s
+                </div>}
+              </div>
+              {active&&(
+                <div style={{height:4,borderRadius:2,background:'rgba(255,255,255,0.06)',overflow:'hidden',position:'relative',marginLeft:50}}>
+                  <div style={{height:'100%',borderRadius:2,background:ph.color,width:`${progress*100}%`,transition:'width 0.1s linear',boxShadow:`0 0 8px ${ph.color}88`}}/>
+                  <div className="task-bar-shine"/>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSANT RACINE : App
+   - Initialise le state via useReducer (INIT ou LOAD depuis localStorage)
+   - Détecte si on ouvre une prez existante via ?id=xxx dans l'URL
+   - Pré-remplit le BP connecté depuis les paramètres
+   - Gère les raccourcis clavier globaux :
+     * Cmd+Shift+C : copier le JSON
+     * Flèches droite/gauche : naviguer entre les étapes
+     * Escape : retour au dashboard
+     * Backspace : retour à l'étape précédente
+   - Rend : Sidebar + barre de progression + main (étape courante)
+   ═══════════════════════════════════════════════════════════════════════════ */
+function App() {
+  const [state,dispatch]=useReducer(reducer,INIT);
+  const {msg,show}=useToast();
+  const [fetching,setFetching]=useState(false);
+
+  const [isExisting,setIsExisting]=useState(false); // true si la prez a ete chargee depuis le dashboard (pas une creation)
+
+  /* ── Mode lecture seule (readOnly) ──────────────────────────────────────
+     Si un utilisateur est connecte (settings.currentUser) et que la prez
+     appartient a un autre BP (state.bp !== currentUser), toute l'interface
+     passe en readOnly : les champs sont desactives, les boutons d'action
+     sont masques, et un bandeau orange "Lecture seule" s'affiche en haut.
+     Cas ou readOnly est false :
+     - Aucun BP assigne a la prez (state.bp vide)
+     - Aucun utilisateur connecte (currentUser null)
+     - Le BP connecte est le proprietaire de la prez */
+  const settings=loadSettings();
+  const currentUser=settings?.currentUser||null;
+  const isOwner=!state.bp||!currentUser||state.bp===currentUser;
+  const readOnly=!isOwner;
+
+  /* ── Initialisation au montage ──────────────────────────────────────────
+     Deux chemins possibles :
+     1. URL avec ?id=xxx : charge la prez existante depuis localStorage via LOAD.
+        Le LOAD restaure l'etat complet (y compris currentStep) et marque isExisting=true.
+     2. Pas d'id : nouvelle prez. Pre-remplit le BP avec l'utilisateur connecte (si defini)
+        pour eviter au BP de se re-selectionner a chaque creation. */
+  useEffect(()=>{
+    const id=new URLSearchParams(window.location.search).get('id');
+    if(id){const all=loadAll(),p=all.find(x=>x.id===id);if(p){dispatch({t:'LOAD',d:p});setIsExisting(true);}return;}
+    const s=loadSettings();
+    if(s&&s.currentUser) dispatch({t:'SET',k:'bp',v:s.currentUser});
+  },[]);
+
+  /* ── Auto-save : persiste currentStep dans localStorage ──────────────────
+     Se declenche a chaque changement de currentStep ou du nombre de leviers actifs.
+     Condition : n'enregistre que si un nom client est saisi OU si c'est une prez existante.
+     Cela evite de polluer le localStorage avec des presentations vides.
+     Grace a cet effet, l'utilisateur retrouve exactement la bonne etape apres un refresh
+     ou une navigation retour (le LOAD dans le reducer restaure currentStep). */
+  useEffect(()=>{
+    if(state.clientName||isExisting){
+      upsert({...state});
+    }
+  },[state.currentStep,state.activeLevers.length]);
+
+  /** Sauvegarde la prez en brouillon dans localStorage */
+  function saveDraft(){
+    upsert({...state,status:'brouillon'});
+    show('Brouillon sauvegardé');
+  }
+
+  /** Quitter avec confirmation : protege contre la perte de donnees.
+      Trois scenarios :
+      1. Prez existante (chargee depuis le dashboard) : quitte directement,
+         car les modifications sont deja sauvegardees au fil de l'eau.
+      2. Nouvelle prez sans rien de saisi (step 1, nom vide) : quitte directement,
+         rien a perdre.
+      3. Nouvelle prez avec du contenu : affiche un confirm() natif du navigateur.
+         OK = sauvegarde en brouillon puis quitte. Annuler = quitte sans sauvegarder.
+      Appelee par : le bouton Accueil dans la sidebar et le raccourci Escape. */
+  function confirmLeave(){
+    if(isExisting){window.location.href='index.html';return;}
+    if(!state.clientName&&state.currentStep===1){
+      window.location.href='index.html';return;
+    }
+    const choice=confirm('Voulez-vous enregistrer en brouillon avant de quitter ?\n\nOK = Sauvegarder en brouillon\nAnnuler = Quitter sans sauvegarder');
+    if(choice) saveDraft();
+    window.location.href='index.html';
+  }
+
+  /* ── Ref pour beforeunload ──────────────────────────────────────────────
+     useRef est necessaire car le listener beforeunload capture la closure au moment
+     de l'attachement. Sans ref, isExisting serait toujours false dans le handler
+     meme apres le chargement d'une prez existante (stale closure). */
+  const isExistingRef=useRef(isExisting);
+  useEffect(()=>{isExistingRef.current=isExisting;},[isExisting]);
+
+  /* ── Protection beforeunload ─────────────────────────────────────────
+     Empeche la fermeture/rechargement accidentel de la page si l'utilisateur
+     est en train de creer une nouvelle presentation (clientName renseigne).
+     Desactive si la prez est deja existante (isExistingRef) ou si aucun nom
+     n'a ete saisi, car il n'y a rien a perdre dans ces cas.
+     e.returnValue='' est requis par la spec du navigateur pour afficher l'alerte. */
+  useEffect(()=>{
+    const warn=e=>{
+      if(!state.clientName||isExistingRef.current) return;
+      e.preventDefault();e.returnValue='';
+    };
+    window.addEventListener('beforeunload',warn);
+    return()=>window.removeEventListener('beforeunload',warn);
+  },[state.clientName]);
+
+  /* ── Raccourcis clavier globaux (niveau App) ────────────────────────────
+     Cmd/Ctrl+Shift+C : copie le JSON complet dans le presse-papier (fonctionne partout)
+     Les raccourcis suivants sont desactives dans les champs de saisie et a l'etape 3
+     (la Step3Review gere ses propres raccourcis clavier pour la navigation Tinder) :
+     - ArrowRight  : etape suivante (steps 1→2→3→4)
+     - ArrowLeft   : etape precedente
+     - Escape      : quitter avec confirmation (confirmLeave)
+     - Backspace   : retour a l'etape precedente */
+  useEffect(()=>{
+    const h=e=>{
+      if((e.metaKey||e.ctrlKey)&&e.shiftKey&&e.key==='c'){copy(JSON.stringify(buildJSON(state),null,2),()=>show('JSON copié !'));return;}
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
+      if(state.currentStep===3) return; // Step3 a ses propres raccourcis (fleches = cards, pas steps)
+      if(e.key==='ArrowRight'&&state.currentStep<4){e.preventDefault();dispatch({t:'STEP',n:state.currentStep+1});}
+      if(e.key==='ArrowLeft'&&state.currentStep>1){e.preventDefault();dispatch({t:'STEP',n:state.currentStep-1});}
+      if(e.key==='Escape'){e.preventDefault();confirmLeave();}
+      if(e.key==='Backspace'&&state.currentStep>1){e.preventDefault();dispatch({t:'STEP',n:state.currentStep-1});}
+    };
+    window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);
+  },[state]);
+
+  /* ── Rendu principal ─────────────────────────────────────────────────
+     Le Context React (Ctx) diffuse state, dispatch et readOnly a tous les
+     composants enfants via useR2(). Cela evite le prop drilling a travers
+     les 4 etapes et leurs sous-composants.
+     Structure : Sidebar fixe a gauche + zone principale a droite contenant
+     le bandeau readOnly (conditionnel), la barre de progression et l'etape courante. */
+  return (
+    <Ctx.Provider value={{state,dispatch,readOnly}}>
+      <div className="shell">
+        <Sidebar toastFn={show} onLeave={confirmLeave}/>
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          {/* Bandeau lecture seule si le BP connecte n'est pas le proprietaire */}
+          {readOnly&&(
+            <div style={{padding:'6px 48px',background:'rgba(255,159,10,0.1)',borderBottom:'1px solid rgba(255,159,10,0.2)',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+              <span style={{fontSize:12,color:'#FF9F0A',fontWeight:600}}>Lecture seule</span>
+              <span style={{fontSize:12,color:'var(--text-3)'}}>— Présentation de <strong style={{color:'var(--text-2)'}}>{state.bp}</strong></span>
+            </div>
+          )}
+          <div className="step-bar">
+            <div className="step-bar-fill" style={{width:`${(state.currentStep/4)*100}%`}}/>
+          </div>
+          {/* ── Routage par etape ──
+              Step 1 a deux sous-etats : le formulaire (fetching=false) et
+              l'ecran de transition FetchingScreen (fetching=true) qui simule
+              la recuperation des donnees avant de passer a Step 2. */}
+          <main className="main" style={{flex:1}}>
+            {state.currentStep===1&&!fetching&&<Step1 onContinue={()=>setFetching(true)}/>}
+            {state.currentStep===1&&fetching&&<FetchingScreen clientName={state.clientName} claapUrl={state.claapUrl} onDone={()=>{setFetching(false);dispatch({t:'STEP',n:2});}}/>}
+            {state.currentStep===2&&<Step2/>}
+            {state.currentStep===3&&<Step3Review toastFn={show}/>}
+            {state.currentStep===4&&<StepCanva toastFn={show}/>}
+          </main>
+        </div>
+      </div>
+      {msg&&<div className="toast">{msg}</div>}
+    </Ctx.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<!-- =======================================================================
+     HOME.HTML — Page d'accueil / landing page de Master R2
+     Présente l'outil, ses bénéfices et un CTA vers le dashboard.
+     Design inspiré des landing pages SaaS modernes (Lemlist, Clay, etc.)
+     ======================================================================= -->
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<link rel="icon" type="image/png" href="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Master R2 — Bulldozer Collective</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700;800;900&display=swap');
+
+  :root {
+    --bg:      #0C0C0A;
+    --bg-2:    #141412;
+    --bg-3:    #1C1C1A;
+    --border:  #2A2A28;
+    --text:    #F2F2F7;
+    --text-2:  #AEAEB2;
+    --text-3:  #6E6E73;
+    --accent:  #D4FF00;
+    --accent-h:#B8E600;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Inconsolata', monospace;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  a { text-decoration: none; color: inherit; }
+
+  /* ── Nav ─────────────────────────────────────────────────── */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 48px;
+    background: rgba(12,12,10,0.8); backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .nav-left { display: flex; align-items: center; gap: 12px; }
+  .nav-logo { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
+  .nav-brand { font-size: 16px; font-weight: 800; letter-spacing: -0.02em; }
+  .nav-brand span { color: var(--accent); }
+  .nav-links { display: flex; gap: 32px; }
+  .nav-links a { font-size: 14px; color: var(--text-2); font-weight: 500; transition: color 0.15s; }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta {
+    background: var(--accent); color: #000; font-size: 14px; font-weight: 700;
+    padding: 10px 24px; border-radius: 8px; border: none; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .nav-cta:hover { background: var(--accent-h); }
+
+  /* ── Hero ────────────────────────────────────────────────── */
+  .hero {
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 120px 48px 80px;
+    position: relative;
+  }
+  .hero::before {
+    content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 800px; height: 800px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(212,255,0,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(212,255,0,0.08); border: 1px solid rgba(212,255,0,0.15);
+    border-radius: 100px; padding: 6px 16px; font-size: 13px; font-weight: 600;
+    color: var(--accent); margin-bottom: 32px;
+  }
+  .hero-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s ease infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+  .hero h1 {
+    font-size: 72px; font-weight: 900; letter-spacing: -0.04em;
+    line-height: 1.05; max-width: 900px; margin-bottom: 24px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero p {
+    font-size: 20px; color: var(--text-2); max-width: 600px;
+    line-height: 1.6; margin-bottom: 40px;
+  }
+  .hero-ctas { display: flex; gap: 16px; align-items: center; }
+  .btn-primary {
+    background: var(--accent); color: #000; font-size: 16px; font-weight: 700;
+    padding: 14px 32px; border-radius: 10px; border: none; cursor: pointer;
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary:hover { background: var(--accent-h); transform: translateY(-1px); box-shadow: 0 8px 30px rgba(212,255,0,0.2); }
+  .btn-secondary {
+    background: transparent; color: var(--text); font-size: 16px; font-weight: 600;
+    padding: 14px 32px; border-radius: 10px; border: 1px solid var(--border);
+    cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-secondary:hover { border-color: var(--text-3); background: var(--bg-2); }
+
+  /* ── Video ───────────────────────────────────────────────── */
+  .video-section {
+    padding: 0 48px 100px; display: flex; justify-content: center;
+  }
+  .video-wrap {
+    width: 100%; max-width: 1100px; aspect-ratio: 16/9;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 16px;
+    overflow: hidden; position: relative; cursor: pointer;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 80px rgba(212,255,0,0.03);
+    transition: transform 0.3s, box-shadow 0.3s;
+  }
+  .video-wrap:hover { transform: scale(1.005); box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 100px rgba(212,255,0,0.05); }
+  .video-wrap iframe { width: 100%; height: 100%; border: none; }
+  .video-play {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 80px; height: 80px; border-radius: 50%;
+    background: var(--accent); display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 40px rgba(212,255,0,0.3);
+    transition: transform 0.2s;
+  }
+  .video-play:hover { transform: translate(-50%,-50%) scale(1.1); }
+  .video-play::after {
+    content: ''; width: 0; height: 0;
+    border-left: 22px solid #000; border-top: 14px solid transparent; border-bottom: 14px solid transparent;
+    margin-left: 4px;
+  }
+
+  /* ── Stats ───────────────────────────────────────────────── */
+  .stats {
+    display: flex; justify-content: center; gap: 80px;
+    padding: 80px 48px; border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat { text-align: center; }
+  .stat-val { font-size: 56px; font-weight: 900; letter-spacing: -0.04em; color: var(--accent); }
+  .stat-lbl { font-size: 15px; color: var(--text-3); margin-top: 8px; font-weight: 500; }
+
+  /* ── Features ────────────────────────────────────────────── */
+  .features { padding: 100px 48px; }
+  .features-title {
+    text-align: center; font-size: 48px; font-weight: 900;
+    letter-spacing: -0.03em; margin-bottom: 16px;
+  }
+  .features-sub {
+    text-align: center; font-size: 18px; color: var(--text-2);
+    max-width: 600px; margin: 0 auto 64px; line-height: 1.6;
+  }
+  .features-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 24px; max-width: 1100px; margin: 0 auto;
+  }
+  .feature {
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 16px;
+    padding: 32px; transition: border-color 0.2s, transform 0.2s;
+  }
+  .feature:hover { border-color: rgba(212,255,0,0.2); transform: translateY(-2px); }
+  .feature-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: rgba(212,255,0,0.08); display: flex; align-items: center;
+    justify-content: center; font-size: 24px; margin-bottom: 20px;
+  }
+  .feature-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .feature-desc { font-size: 14px; color: var(--text-2); line-height: 1.6; }
+
+  /* ── How it works ────────────────────────────────────────── */
+  .how { padding: 100px 48px; border-top: 1px solid var(--border); }
+  .how-title {
+    text-align: center; font-size: 48px; font-weight: 900;
+    letter-spacing: -0.03em; margin-bottom: 64px;
+  }
+  .how-steps {
+    display: flex; gap: 32px; max-width: 1100px; margin: 0 auto;
+  }
+  .how-step {
+    flex: 1; background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px; position: relative;
+  }
+  .how-num {
+    width: 36px; height: 36px; border-radius: 50%; background: var(--accent);
+    color: #000; font-size: 16px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+  }
+  .how-step-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .how-step-desc { font-size: 14px; color: var(--text-2); line-height: 1.6; }
+  .how-arrow {
+    position: absolute; right: -20px; top: 50%; transform: translateY(-50%);
+    color: var(--accent); font-size: 20px; font-weight: 800;
+  }
+
+  /* ── CTA final ──────────────────────────────────────────── */
+  .cta-section {
+    padding: 100px 48px; text-align: center;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+  .cta-section::before {
+    content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 600px; height: 600px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(212,255,0,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cta-title { font-size: 48px; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 16px; }
+  .cta-title span { color: var(--accent); }
+  .cta-sub { font-size: 18px; color: var(--text-2); margin-bottom: 40px; max-width: 500px; margin-left: auto; margin-right: auto; line-height: 1.6; }
+
+  /* ── Footer ─────────────────────────────────────────────── */
+  .footer {
+    padding: 32px 48px; border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .footer-left { font-size: 13px; color: var(--text-3); }
+  .footer-right { display: flex; gap: 24px; }
+  .footer-right a { font-size: 13px; color: var(--text-3); transition: color 0.15s; }
+  .footer-right a:hover { color: var(--text-2); }
+
+  /* ── Responsive ─────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 40px; }
+    .features-grid { grid-template-columns: 1fr; }
+    .how-steps { flex-direction: column; }
+    .stats { flex-direction: column; gap: 32px; }
+    .nav { padding: 12px 20px; }
+    .nav-links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Navigation fixe ──────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-left">
+    <img class="nav-logo" src="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU" alt="Bulldozer" />
+    <div class="nav-brand">Master <span>R2</span></div>
+  </div>
+  <div class="nav-links">
+    <a href="#features">Fonctionnalites</a>
+    <a href="#how">Comment ca marche</a>
+    <a href="#stats">Resultats</a>
+  </div>
+  <a href="index.html" class="nav-cta">Ouvrir le dashboard</a>
+</nav>
+
+<!-- ── Hero ──────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-badge"><span class="dot"></span> Propulse par Claude AI</div>
+  <h1>Vos presentations R2<br/>generees en <span>3 minutes</span></h1>
+  <p>Master R2 automatise la creation de vos presentations commerciales Bulldozer. Du transcript Claap au deck Canva, Claude fait le travail. Vous, vous validez.</p>
+  <div class="hero-ctas">
+    <a href="index.html" class="btn-primary">Commencer maintenant</a>
+    <a href="#video" class="btn-secondary">Voir la demo</a>
+  </div>
+</section>
+
+<!-- ── Video de presentation ────────────────────────────────── -->
+<section class="video-section" id="video">
+  <div class="video-wrap" onclick="this.innerHTML='<iframe src=\'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1\' allowfullscreen></iframe>'">
+    <div class="video-play"></div>
+  </div>
+</section>
+
+<!-- ── Stats ─────────────────────────────────────────────────── -->
+<section class="stats" id="stats">
+  <div class="stat">
+    <div class="stat-val">3 min</div>
+    <div class="stat-lbl">pour generer une prez R2 complete</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">-85%</div>
+    <div class="stat-lbl">de temps passe vs. production manuelle</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">52</div>
+    <div class="stat-lbl">slides personnalisees automatiquement</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">6</div>
+    <div class="stat-lbl">leviers analyses par Claude</div>
+  </div>
+</section>
+
+<!-- ── Features ──────────────────────────────────────────────── -->
+<section class="features" id="features">
+  <h2 class="features-title">Tout ce dont vous avez besoin</h2>
+  <p class="features-sub">Un seul outil pour transformer un call R1 en presentation commerciale prete a envoyer.</p>
+  <div class="features-grid">
+    <div class="feature">
+      <div class="feature-icon">🎥</div>
+      <div class="feature-title">Analyse du Claap R1</div>
+      <div class="feature-desc">Claude lit le transcript de votre call de decouverte et en extrait le contexte client, les enjeux et les challenges.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔍</div>
+      <div class="feature-title">Pre-audit automatique</div>
+      <div class="feature-desc">SEO, GEO, Google Ads, Meta Ads, LinkedIn Ads, CRO — chaque levier est analyse avec une note sur 10 et des recommandations.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🎨</div>
+      <div class="feature-title">Injection Canva</div>
+      <div class="feature-desc">Le contenu genere est injecte directement dans votre presentation Canva. Find & Replace, analyses, slides — tout est automatise.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">Review Tinder-style</div>
+      <div class="feature-desc">Relisez et validez chaque section en mode card-by-card. Flèches pour naviguer, Entrer pour valider. Rapide et intuitif.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔄</div>
+      <div class="feature-title">Regeneration contextuelle</div>
+      <div class="feature-desc">Pas satisfait ? Donnez du contexte a Claude et il regenere la section. "Insiste sur le mobile", "ton trop technique" — il comprend.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title">Diff visuel Git-style</div>
+      <div class="feature-desc">Avant chaque injection Canva, visualisez en vert ce qui est ajoute et en rouge ce qui est supprime. Aucune surprise.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ──────────────────────────────────────────── -->
+<section class="how" id="how">
+  <h2 class="how-title">4 etapes. 3 minutes. 1 prez.</h2>
+  <div class="how-steps">
+    <div class="how-step">
+      <div class="how-num">1</div>
+      <div class="how-step-title">Client</div>
+      <div class="how-step-desc">Entrez le nom du client et le lien du Claap R1. Claude recupere le transcript, analyse les leviers et prepare le pre-audit.</div>
+      <div class="how-arrow">→</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">2</div>
+      <div class="how-step-title">Leviers & Slides</div>
+      <div class="how-step-desc">Selectionnez les leviers a activer (Demand Capture / Demand Gen) et personnalisez les slides a inclure.</div>
+      <div class="how-arrow">→</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">3</div>
+      <div class="how-step-title">Review</div>
+      <div class="how-step-desc">Relisez chaque section, ajustez les notes et le wording. Validez avec Entrer. Regenerez si besoin avec du contexte.</div>
+      <div class="how-arrow">→</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">4</div>
+      <div class="how-step-title">Canva</div>
+      <div class="how-step-desc">Un clic. Claude injecte tout dans la presentation Canva. Telecharger les screenshots, relire le diff, et c'est parti.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA final ─────────────────────────────────────────────── -->
+<section class="cta-section">
+  <h2 class="cta-title">Pret a gagner <span>2 heures</span> par prez ?</h2>
+  <p class="cta-sub">Rejoignez les Business Partners qui produisent leurs R2 en 3 minutes au lieu de 2 heures.</p>
+  <div style="display:flex;gap:16px;justify-content:center">
+    <a href="nouveau.html" class="btn-primary">Creer une presentation</a>
+    <a href="index.html" class="btn-secondary">Voir le dashboard</a>
+  </div>
+</section>
+
+<!-- ── Footer ────────────────────────────────────────────────── -->
+<footer class="footer">
+  <div class="footer-left">Bulldozer Collective — Master R2 — Propulse par Claude AI</div>
+  <div class="footer-right">
+    <a href="index.html">Dashboard</a>
+    <a href="aide.html">Aide</a>
+    <a href="parametres.html">Parametres</a>
+  </div>
+</footer>
+
+</body>
+</html>

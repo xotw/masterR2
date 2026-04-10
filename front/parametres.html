@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<!-- ============================================================================
+     PARAMETRES.HTML — Page de configuration de l'application Master R2
+     Trois sections principales :
+     1. Mon profil — sélection du BP actif (pré-remplit le formulaire nouveau.html)
+     2. Intégrations MCP — activation/désactivation des outils Claude Code
+        (Claude, Canva, Claap, Slack, Notion, HubSpot + alternatives Salesforce,
+        Modjo, Gong, Teams, Jira). Chaque outil affiche son vrai logo.
+     3. Équipe — gestion des BPs (ajout avec URL photo, édition de photo
+        sur les membres existants, suppression avec déconnexion auto si nécessaire)
+
+     MIGRATION DE PHOTOS :
+     Au chargement, les photos des DEFAULT_BPS sont mergées dans les BPs existants
+     en localStorage (pour les utilisateurs qui avaient créé leur compte avant l'ajout
+     des photos LinkedIn dans le code source).
+     ============================================================================ -->
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<link rel="icon" type="image/png" href="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Paramètres — Bulldozer collective</title>
+<!-- Chargement de React 18 en mode développement (non minifié pour faciliter le débogage) -->
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<!-- Babel standalone permet d'écrire du JSX directement dans le navigateur sans étape de build -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     VARIABLES CSS GLOBALES
+     Palette sombre personnalisée Bulldozer avec accent vert fluo.
+     Toutes les couleurs de l'interface sont centralisées ici
+     pour garantir la cohérence et faciliter les modifications.
+     ============================================================ */
+  :root {
+    --bg:        #303028;          /* Fond principal de la page */
+    --bg-nav:    #252523;          /* Fond de la barre de navigation latérale */
+    --bg-card:   #363632;          /* Fond des cartes et conteneurs */
+    --bg-input:  #3C3C38;          /* Fond des champs de saisie */
+    --bg-hover:  #3A3A36;          /* Fond au survol des éléments interactifs */
+    --border:    #484844;          /* Bordures et séparateurs */
+    --text:      #F2F2F7;          /* Texte principal (blanc cassé) */
+    --text-2:    #AEAEB2;          /* Texte secondaire (gris clair) */
+    --text-3:    #6E6E73;          /* Texte tertiaire / placeholders (gris foncé) */
+    --accent:    #D4FF00;          /* Couleur d'accent Bulldozer (vert fluo) */
+    --accent-bg: rgba(212,255,0,0.06); /* Fond léger pour les éléments accentués */
+    --error:     #FF453A;          /* Rouge pour les actions destructives et erreurs */
+  }
+
+  /* ============================================================
+     RESET ET BASE
+     Normalisation du box-model et suppression des marges par défaut.
+     Le root prend 100% de la hauteur pour le layout flex pleine page.
+     ============================================================ */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui,-apple-system,'Segoe UI',sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, .nav-title, .top-title, .section-title, .stat-val, .nav-brand { font-family: 'Inconsolata',monospace; }
+
+  /* Scrollbar personnalisée fine et discrète pour WebKit */
+  ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Suppression des styles par défaut des liens et boutons */
+  a { text-decoration: none; color: inherit; }
+  button { font-family: inherit; cursor: pointer; }
+  input, select { font-family: inherit; }
+
+  /* ============================================================
+     LAYOUT PRINCIPAL (SHELL)
+     Structure flex horizontale : nav latérale + zone principale.
+     Prend toute la hauteur du viewport sans scroll externe.
+     ============================================================ */
+  .shell { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ============================================================
+     BARRE DE NAVIGATION LATERALE
+     Panneau fixe de 300px à gauche avec logo, boutons de navigation,
+     recherche, liste des présentations récentes et profil utilisateur.
+     ============================================================ */
+  .nav { width: 300px; flex-shrink: 0; background: var(--bg-nav); border-right: 1px solid var(--border); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  /* En-tête avec le logo Bulldozer et le sous-titre */
+  .nav-logo { padding: 18px 16px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); }
+  .nav-logo-img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+  .nav-title { font-size: 15px; font-weight: 700; }
+  .nav-sub   { font-size: 14px; color: var(--text-3); margin-top: 1px; }
+
+  /* Bouton "Nouvelle présentation" mis en avant avec la couleur d'accent */
+  .nav-new-wrap { padding: 12px; border-bottom: 1px solid var(--border); }
+  .nav-new { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; background: var(--accent); color: #000; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; border: none; width: 100%; justify-content: center; }
+  .nav-new:hover { background: #B8E600; }
+
+  /* Barre de recherche avec icône positionnée en absolu */
+  .nav-search-wrap { padding: 12px; border-bottom: 1px solid var(--border); }
+  .nav-search { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 8px 32px; font-size: 14px; color: var(--text); width: 100%; outline: none; transition: border-color 0.15s; }
+  .nav-search:focus { border-color: var(--accent); }
+  .nav-search::placeholder { color: var(--text-3); }
+  .nav-search-icon { position: absolute; left: 23px; top: 50%; transform: translateY(-50%); font-size: 16px; color: var(--text-3); pointer-events: none; }
+
+  /* Titre de section dans la nav (ex: "Récent") */
+  .nav-section { padding: 12px 14px 5px; font-size: 14px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* Liste scrollable des présentations récentes */
+  .nav-list { padding: 0 8px; flex: 1; overflow-y: auto; }
+
+  /* Élément individuel dans la liste des présentations */
+  .nav-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 7px; cursor: pointer; transition: background 0.1s; margin-bottom: 1px; }
+  .nav-item:hover { background: var(--bg-hover); }
+  .nav-item-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .nav-item-name { font-size: 14px; font-weight: 500; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Pied de la navigation : liens Aide, Paramètres et profil connecté */
+  .nav-bottom { border-top: 1px solid var(--border); padding: 8px; }
+  .nav-btn { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 7px; cursor: pointer; transition: background 0.1s; width: 100%; background: none; border: none; color: var(--text-2); font-size: 14px; font-weight: 500; }
+  .nav-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .nav-btn.active { background: var(--accent-bg); color: var(--text); }
+
+  /* ============================================================
+     ZONE PRINCIPALE (MAIN)
+     Contient la barre supérieure et le contenu scrollable.
+     ============================================================ */
+  .main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+  /* Barre supérieure sticky avec le titre de la page et les actions */
+  .top-bar { padding: 20px 36px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg); position: sticky; top: 0; z-index: 5; }
+  .top-title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+  .top-sub { font-size: 13px; color: var(--text-3); margin-top: 2px; }
+
+  /* Zone de contenu limitée à 900px pour une meilleure lisibilité */
+  .content { padding: 28px 36px; flex: 1; max-width: 900px; }
+
+  /* ============================================================
+     SECTIONS
+     Blocs de regroupement thématique (Profil, MCP, Équipe).
+     Chaque section contient un titre, un sous-titre et des cartes.
+     ============================================================ */
+  .section { margin-bottom: 40px; }
+  .section-title { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 5px; }
+  .section-sub { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
+
+  /* ============================================================
+     CARTES (CARDS)
+     Conteneurs visuels avec fond sombre, bordure et coins arrondis.
+     Utilisées pour regrouper les profils, l'équipe, etc.
+     ============================================================ */
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+  .card + .card { margin-top: 12px; }
+
+  /* ============================================================
+     BOUTONS
+     Trois variantes unifiées en taille :
+     - btn-p : primaire (accent vert fluo, texte noir)
+     - btn-g : ghost / secondaire (transparent avec bordure)
+     - btn-danger : destructif (rouge, pour suppression)
+     ============================================================ */
+  .btn-p, .btn-g, .btn-danger { border-radius: 6px; padding: 8px 16px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s; white-space: nowrap; cursor: pointer; border: none; }
+  .btn-p { background: var(--accent); color: #000; }
+  .btn-p:hover { background: #B8E600; }
+  .btn-g { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+  .btn-g:hover { border-color: #4A4A4C; color: var(--text); }
+  .btn-danger { background: transparent; color: var(--error); border: 1px solid rgba(255,69,58,0.3); }
+  .btn-danger:hover { background: rgba(255,69,58,0.08); border-color: var(--error); }
+
+  /* ============================================================
+     GRILLE DE SELECTION DE PROFIL
+     Affiche les Business Partners en grille 4 colonnes.
+     Le profil sélectionné est mis en évidence avec la bordure accent.
+     ============================================================ */
+  .profile-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+  .profile-card { background: var(--bg-input); border: 2px solid var(--border); border-radius: 10px; padding: 16px 12px; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .profile-card:hover { border-color: #4A4A4C; }
+  .profile-card.selected { border-color: var(--accent); background: var(--accent-bg); }
+  .profile-av { width: 44px; height: 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; margin-bottom: 8px; }
+  .profile-name { font-size: 15px; font-weight: 700; }
+  .profile-role { font-size: 14px; color: var(--text-3); margin-top: 2px; }
+
+  /* ============================================================
+     INTERRUPTEUR A BASCULE (TOGGLE)
+     Composant on/off utilisé pour activer/désactiver les outils MCP.
+     L'animation du curseur se fait via transition CSS.
+     ============================================================ */
+  .toggle-wrap { display: flex; align-items: center; gap: 10px; }
+  .toggle { width: 44px; height: 26px; border-radius: 13px; background: var(--bg-input); border: 1px solid var(--border); position: relative; cursor: pointer; transition: background 0.2s, border-color 0.2s; flex-shrink: 0; }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle-knob { width: 20px; height: 20px; border-radius: 50%; background: var(--text-3); position: absolute; top: 2px; left: 2px; transition: all 0.2s; }
+  .toggle.on .toggle-knob { background: #000; left: 22px; }
+
+  /* ============================================================
+     GRILLE DES OUTILS MCP (Model Context Protocol)
+     Liste verticale des intégrations disponibles (Canva, Claap, etc.).
+     Les outils activés reçoivent une bordure et un fond accent subtil.
+     ============================================================ */
+  .mcp-grid { display: flex; flex-direction: column; gap: 8px; }
+  .mcp-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; display: flex; align-items: center; gap: 16px; transition: border-color 0.15s; }
+  .mcp-card.on { border-color: rgba(212,255,0,0.25); background: rgba(212,255,0,0.03); }
+  .mcp-icon { font-size: 28px; flex-shrink: 0; width: 44px; text-align: center; display: flex; align-items: center; justify-content: center; }
+  .mcp-icon img { width: 28px; height: 28px; object-fit: contain; border-radius: 6px; }
+  .mcp-info { flex: 1; min-width: 0; }
+  .mcp-name { font-size: 15px; font-weight: 700; }
+  .mcp-desc { font-size: 15px; color: var(--text-3); margin-top: 2px; }
+  .mcp-cat  { font-size: 13px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+  .alt-label { font-size: 14px; color: var(--text-3); margin-top: 2px; }
+
+  /* ============================================================
+     SEPARATEUR DE SECTION
+     Ligne horizontale avec label pour séparer les groupes d'outils
+     (ex: "Outils principaux" / "Alternatives").
+     ============================================================ */
+  .sep-label { font-size: 14px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 12px; display: flex; align-items: center; gap: 10px; }
+  .sep-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ============================================================
+     TABLEAU DE L'EQUIPE
+     Liste des Business Partners avec avatar, nom, rôle et
+     bouton de suppression. Chaque ligne est séparée par une bordure.
+     ============================================================ */
+  .team-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .team-row:last-child { border-bottom: none; }
+  .team-av { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; flex-shrink: 0; }
+  .team-name { font-size: 15px; font-weight: 600; flex: 1; }
+  .team-role { font-size: 13px; color: var(--text-3); }
+
+  /* ============================================================
+     FORMULAIRE D'AJOUT DE BP
+     Grille à 4 colonnes pour ajouter un nouveau Business Partner :
+     nom, rôle, sélecteur de couleur et bouton de validation.
+     ============================================================ */
+  .add-form { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 10px; align-items: end; margin-top: 18px; }
+  .inp { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 12px; font-size: 14px; width: 100%; outline: none; transition: border-color 0.15s; }
+  .inp:focus { border-color: var(--accent); }
+  .inp::placeholder { color: var(--text-3); }
+  .flbl { display: block; font-size: 13px; font-weight: 500; color: var(--text-2); margin-bottom: 5px; }
+
+  /* ============================================================
+     NOTIFICATION TOAST
+     Message éphémère en bas à droite pour confirmer les actions
+     (connexion, ajout, suppression). Disparaît après 2 secondes.
+     ============================================================ */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg-card); border: 1px solid var(--accent); color: var(--accent); padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 600; z-index: 9999; animation: fadeUp 0.18s ease; }
+  @keyframes fadeUp { from { transform:translateY(8px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+</style>
+</head>
+<body>
+<!-- Point de montage React — l'application entière est rendue dans ce div -->
+<div id="root"></div>
+<script type="text/babel">
+/* =================================================================
+   APPLICATION PARAMETRES — Bulldozer R2
+
+   Page de configuration de l'espace de génération de présentations R2.
+   Permet de :
+   - Sélectionner son profil utilisateur (Business Partner actif)
+   - Activer/désactiver les intégrations MCP (outils Claude Code)
+   - Gérer l'équipe des Business Partners (ajout/suppression)
+
+   Toutes les données sont persistées dans le localStorage du navigateur.
+   ================================================================= */
+
+/* Extraction des hooks React utilisés dans l'application */
+const { useState, useEffect, useCallback } = React;
+
+/* ── Clés de stockage localStorage ──
+   STORAGE_KEY  : clé pour les présentations, utilisée uniquement dans la sidebar
+     pour afficher la liste des présentations récentes. La page paramètres ne modifie
+     pas les présentations, elle ne fait que les lire pour l'affichage.
+     ATTENTION : cette clé est 'master_r2_v1' alors que index.html et nouveau.html
+     utilisent 'master_r2_v12'. En cas de versioning, vérifier la cohérence.
+   SETTINGS_KEY : clé dédiée aux paramètres (currentUser, mcps, bps). Partagée
+     en lecture avec toutes les autres pages (aide.html, index.html, nouveau.html). */
+const STORAGE_KEY    = 'master_r2_v12';
+const SETTINGS_KEY   = 'master_r2_settings';
+
+/* Mapping des icônes par levier d'acquisition — utilisé dans la nav pour identifier
+   visuellement chaque présentation par son levier principal */
+const LEVER_ICONS    = { SEO:'🔍', SEA:'💰', CRO:'⚡', GEO:'🤖', SMA:'📣' };
+
+/* ── Business Partners par défaut ──
+   Liste initiale des membres de l'équipe Bulldozer créée au premier chargement.
+   Chaque BP a un nom, rôle, couleur d'avatar, couleur de texte (tc) et photo LinkedIn.
+   Les photos pointent vers le CDN LinkedIn (media.licdn.com) — elles ont une date
+   d'expiration (paramètre e=) mais restent valides plusieurs mois.
+   Si un BP est ajouté manuellement via le formulaire, il peut ne pas avoir de photo
+   (l'avatar affichera alors ses initiales sur fond coloré). */
+const DEFAULT_BPS = [
+  { name:'Jordan',        role:'Fondateur',        color:'#D4FF00', tc:'#000', photo:'https://media.licdn.com/dms/image/v2/D4D03AQHiOsHCMbDmmA/profile-displayphoto-shrink_800_800/B4DZUfIgeIHkAc-/0/1739984079211?e=1777507200&v=beta&t=gaJ2BLoTZH9XIFZiKbTlHSHazz4Cso452lxnjKGE11M' },
+  { name:'Enguerrand',    role:'Fondateur',        color:'#60A5FA', tc:'#000', photo:'https://media.licdn.com/dms/image/v2/D4E03AQETmOP0jjO2KA/profile-displayphoto-shrink_800_800/B4EZUfUHUuHcAc-/0/1739987124974?e=1777507200&v=beta&t=O7nSUnZlbv7vbeznBqSSM5kYT6BRDXFM3IeU66YcGVo' },
+  { name:'Léo',           role:'Business Partner', color:'#F97316', tc:'#fff', photo:'https://media.licdn.com/dms/image/v2/D4E03AQF_3ZMD7mdT6w/profile-displayphoto-shrink_800_800/B4EZVG_Yw8GwAc-/0/1740652776934?e=1777507200&v=beta&t=2BGOfJ_kA8RGUMaOfDLxQK92UKMFEqcMBrfE3N6Umwc' },
+  { name:'Pierre-Arnaud', role:'Business Partner', color:'#A78BFA', tc:'#fff', photo:'https://media.licdn.com/dms/image/v2/D5603AQEbkmn09Com0g/profile-displayphoto-crop_800_800/B56ZzEKW5aGQAI-/0/1772817576081?e=1777507200&v=beta&t=9VP6NDkbf76spDoF3FdE_IhBIs86p1_xgOiP-1c1hlw' },
+];
+
+/* ── Configuration des outils MCP (Model Context Protocol) ──
+   Liste de toutes les intégrations disponibles dans l'espace Claude Code.
+   - primary:true  → outil principal activé par défaut (6 outils : Claude, Canva, Claap, Slack, Notion, HubSpot)
+   - primary:false → alternative à un outil principal (identifié via altFor)
+     Ex: Salesforce (altFor:'hubspot'), Modjo et Gong (altFor:'claap'), Teams (altFor:'slack'), Jira (altFor:'notion')
+   - logo : URL vers le vrai logo de chaque outil (hébergé sur des CDN publics : Wikimedia, Vecteezy, LinkedIn, etc.)
+     L'emoji `icon` sert de fallback si le logo ne charge pas.
+
+   Cette configuration détermine quels outils Claude utilisera automatiquement
+   lors de la génération des présentations R2. */
+const MCP_TOOLS = [
+  { id:'claude',     name:'Claude',      category:'IA',            icon:'🤖', logo:'https://img.icons8.com/fluent/1200/claude-ai.jpg', desc:'Moteur IA — génération et injection de contenu', primary:true  },
+  { id:'canva',      name:'Canva',       category:'Présentation',  icon:'🎨', logo:'https://static.vecteezy.com/system/resources/thumbnails/048/759/334/small/canva-transparent-icon-free-png.png', desc:'Injection directe dans vos présentations', primary:true  },
+  { id:'claap',      name:'Claap',       category:'Calls vidéo',   icon:'🎥', logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRoKoWlyuor9D0Jv0pC-n7VxkZ6bFkBkPT2-w&s', desc:'Transcripts des R1 et calls clients',       primary:true  },
+  { id:'slack',      name:'Slack',       category:'Communication', icon:'💬', logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Slack_icon_2019.svg/3840px-Slack_icon_2019.svg.png', desc:'Notifications et partage de livrables',     primary:true  },
+  { id:'notion',     name:'Notion',      category:'Docs & wiki',   icon:'📝', logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTkfgoU8tVx-aUbyBH-_UcNuV0Y4mTaTixIKA&s', desc:'Documentation et bases de connaissance',    primary:true  },
+  { id:'hubspot',    name:'HubSpot',     category:'CRM',           icon:'🟠', logo:'https://companieslogo.com/img/orig/HUBS-3bd277ce.png?t=1744165308', desc:'Contacts, deals et pipeline commercial',    primary:true  },
+  { id:'salesforce', name:'Salesforce',  category:'CRM',           icon:'☁️',  logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/1280px-Salesforce.com_logo.svg.png', desc:'Alternative à HubSpot',                    primary:false, altFor:'hubspot' },
+  { id:'modjo',      name:'Modjo',       category:'Calls vidéo',   icon:'🎙️', logo:'https://media.licdn.com/dms/image/v2/D4E0BAQEVKdbcVkNV3Q/company-logo_200_200/B4EZsTeMDtIUAI-/0/1765558239891/modjoai_logo?e=2147483647&v=beta&t=QWdf4TKFDNrbzwF7dcg4T6Szb9G4qxrcBDS-dQnV0Tw', desc:'Alternative à Claap',                      primary:false, altFor:'claap'   },
+  { id:'gong',       name:'Gong',        category:'Calls vidéo',   icon:'🔔', logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSVJYTzQJHofrzS52egjyYymjWzk8nrVwzghQ&s', desc:'Alternative à Claap',                      primary:false, altFor:'claap'   },
+  { id:'teams',      name:'Teams',       category:'Communication', icon:'🟦', logo:'https://upload.wikimedia.org/wikipedia/commons/5/50/Microsoft_Teams.png', desc:'Alternative à Slack',                      primary:false, altFor:'slack'   },
+  { id:'jira',       name:'Jira',        category:'Docs & wiki',   icon:'🔷', logo:'https://cdn.worldvectorlogo.com/logos/jira-1.svg', desc:'Alternative à Notion',                     primary:false, altFor:'notion'  },
+];
+
+/* Palette de couleurs proposée pour les avatars des nouveaux Business Partners */
+const COLOR_OPTIONS = ['#D4FF00','#60A5FA','#F97316','#A78BFA','#34D399','#FB7185','#FBBF24','#818CF8'];
+
+/* ── Fonctions utilitaires de persistance localStorage ──
+   Lecture/écriture sécurisée avec try/catch pour gérer les erreurs de parsing.
+   Retourne null ou un tableau vide en cas d'erreur pour éviter les crashs. */
+
+/** Charge les paramètres depuis localStorage, retourne null si absents ou corrompus */
+function loadSettings() {
+  try { const r = localStorage.getItem(SETTINGS_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
+}
+
+/** Sauvegarde les paramètres dans localStorage au format JSON */
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+/** Charge la liste des présentations existantes depuis localStorage */
+function loadPres() { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : []; } catch { return []; } }
+
+/** Formate une date ISO en format court français (ex: "9 avr.") */
+function fmtDate(iso) { return new Date(iso).toLocaleDateString('fr-FR', { day:'numeric', month:'short' }); }
+
+/** Extrait les initiales d'un nom (gère les noms composés avec tirets et espaces) */
+function initials(name) { return name.split(/[-\s]/).map(p => p[0]).join('').toUpperCase().slice(0, 2); }
+
+/* ── Composant Toggle (interrupteur à bascule) ──
+   Composant contrôlé : reçoit l'état `on` et un callback `onChange`.
+   Utilisé pour activer/désactiver chaque outil MCP individuellement. */
+function Toggle({ on, onChange }) {
+  return (
+    <div className={`toggle${on?' on':''}`} onClick={()=>onChange(!on)}>
+      <div className="toggle-knob"/>
+    </div>
+  );
+}
+
+/* =================================================================
+   COMPOSANT PRINCIPAL : App
+
+   Gère l'ensemble de la page paramètres avec trois sections :
+   1. Sélection du profil utilisateur actif
+   2. Configuration des intégrations MCP
+   3. Gestion de l'équipe (liste + ajout de BPs)
+   ================================================================= */
+function App() {
+  /* ── État local du composant ──
+     - settings    : objet paramètres principal (currentUser, mcps, bps)
+     - newBpName   : nom saisi dans le formulaire d'ajout de BP
+     - newBpRole   : rôle saisi dans le formulaire d'ajout
+     - newBpColor  : couleur sélectionnée pour le nouveau BP
+     - toast       : message de notification temporaire (null = masqué)
+     - search      : valeur de la barre de recherche dans la nav */
+  const [settings, setSettings] = useState(null);
+  const [newBpName, setNewBpName] = useState('');
+  const [newBpRole, setNewBpRole] = useState('Business Partner');
+  const [newBpColor, setNewBpColor] = useState('#34D399');
+  const [newBpPhoto, setNewBpPhoto] = useState('');
+  const [editPhotoId, setEditPhotoId] = useState(null);
+  const [editPhotoUrl, setEditPhotoUrl] = useState('');
+  const [toast, setToast] = useState(null);
+  const [search, setSearch] = useState('');
+
+  /* Affiche un message toast pendant 2 secondes puis le masque automatiquement.
+     Mémorisé avec useCallback pour éviter les re-créations inutiles. */
+  const showToast = useCallback(msg => { setToast(msg); setTimeout(() => setToast(null), 2000); }, []);
+
+  /* ── Initialisation au montage ──
+     Charge les paramètres depuis localStorage. S'il n'y en a pas (premier lancement),
+     crée les valeurs par défaut : aucun utilisateur sélectionné, outils MCP primaires
+     activés, et liste de BPs par défaut. */
+  useEffect(() => {
+    let s = loadSettings();
+    if (s) {
+      /* Migration des photos : les URLs de photos LinkedIn ont ete ajoutees a DEFAULT_BPS
+         apres la premiere version de l'app. Pour les utilisateurs existants qui ont deja des BPs
+         en localStorage SANS photo, on merge automatiquement la photo depuis DEFAULT_BPS.
+         Condition : le BP existe dans DEFAULT_BPS, a une photo, ET le BP local n'en a pas encore. */
+      if(s.bps) {
+        s.bps = s.bps.map(bp => {
+          const def = DEFAULT_BPS.find(d => d.name === bp.name);
+          return def && def.photo && !bp.photo ? {...bp, photo: def.photo} : bp;
+        });
+        saveSettings(s);
+      }
+      setSettings(s);
+    } else {
+      const defaults = {
+        currentUser: null,
+        mcps: Object.fromEntries(MCP_TOOLS.map(t => [t.id, t.primary])),
+        bps: DEFAULT_BPS,
+      };
+      saveSettings(defaults);
+      setSettings(defaults);
+    }
+  }, []);
+
+  /* ── Mise à jour des paramètres ──
+     Fusionne le patch partiel avec l'état courant, met à jour le state React
+     ET persiste immédiatement dans localStorage pour ne rien perdre. */
+  function update(patch) {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    saveSettings(next);
+  }
+
+  /* Active ou désactive un outil MCP par son identifiant.
+     Inverse simplement le booléen correspondant dans le dictionnaire mcps. */
+  function toggleMcp(id) {
+    const next = { ...settings.mcps, [id]: !settings.mcps[id] };
+    update({ mcps: next });
+  }
+
+  /* ── Sélection / déconnexion du profil utilisateur ──
+     Un clic sur le profil déjà sélectionné le désélectionne (toggle).
+     L'utilisateur sélectionné sera pré-rempli dans le formulaire de création
+     de nouvelle présentation (page nouveau.html). */
+  function selectUser(name) {
+    update({ currentUser: settings.currentUser === name ? null : name });
+    showToast(settings.currentUser === name ? 'Déconnecté' : `Connecté en tant que ${name}`);
+  }
+
+  /* ── Ajout d'un nouveau Business Partner ──
+     Détermine automatiquement la couleur du texte (noir ou blanc) en fonction
+     de la luminosité de la couleur d'avatar choisie pour garantir la lisibilité.
+     Si une URL de photo est fournie (champ optionnel dans le formulaire d'ajout),
+     elle est enregistrée dans l'objet BP et sera affichée à la place des initiales.
+     Ajoute le BP à la liste et réinitialise les champs nom et photo. */
+  function addBp() {
+    if (!newBpName.trim()) return;
+    const tc = ['#D4FF00','#F97316','#34D399','#FBBF24'].includes(newBpColor) ? '#000' : '#fff';
+    const bp = { name: newBpName.trim(), role: newBpRole, color: newBpColor, tc };
+    if(newBpPhoto.trim()) bp.photo = newBpPhoto.trim();
+    update({ bps: [...settings.bps, bp] });
+    setNewBpName(''); setNewBpPhoto(''); showToast(`${bp.name} ajouté !`);
+  }
+
+  /** Met à jour la photo d'un BP existant.
+      Si l'URL est vide (effacée), supprime la photo (undefined → pas sérialisé en JSON).
+      Accessible via le bouton "Modifier la photo" / "Ajouter une photo" dans la liste d'équipe.
+      Après validation, ferme le formulaire inline (editPhotoId=null) et affiche un toast. */
+  function updateBpPhoto(name, url) {
+    update({ bps: settings.bps.map(bp => bp.name===name ? {...bp, photo:url.trim()||undefined} : bp) });
+    setEditPhotoId(null); setEditPhotoUrl('');
+    showToast('Photo mise à jour !');
+  }
+
+  /* ── Suppression d'un Business Partner ──
+     Si le BP supprimé est l'utilisateur courant, on le déconnecte d'abord
+     pour éviter une référence vers un profil inexistant. */
+  function removeBp(name) {
+    if (settings.currentUser === name) update({ currentUser: null, bps: settings.bps.filter(b => b.name !== name) });
+    else update({ bps: settings.bps.filter(b => b.name !== name) });
+    showToast('Supprimé');
+  }
+
+  /* Charge les présentations pour afficher les plus récentes dans la nav latérale.
+     Triées par date de création décroissante, limitées aux 6 dernières. */
+  const pres = loadPres();
+  const recent = [...pres].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 6);
+
+  /* Garde de rendu : tant que les paramètres ne sont pas chargés, on n'affiche rien
+     pour éviter un flash de contenu vide ou des erreurs d'accès aux propriétés. */
+  if (!settings) return null;
+
+  /* Séparation des outils MCP entre principaux et alternatives
+     pour les afficher dans deux groupes distincts dans l'interface. */
+  const primaryMcps = MCP_TOOLS.filter(t => t.primary);
+  const altMcps     = MCP_TOOLS.filter(t => !t.primary);
+
+  return (
+    <div className="shell">
+      {/* ============================================================
+          NAVIGATION LATERALE
+          Barre latérale gauche avec : logo, bouton nouvelle prez,
+          lien accueil, recherche, liste des récentes et pied de page.
+          ============================================================ */}
+      <nav className="nav">
+        {/* Logo Bulldozer — cliquable pour retourner à l'accueil */}
+        <div className="nav-logo" style={{cursor:'pointer'}} onClick={()=>window.location.href='index.html'}>
+          <img className="nav-logo-img"
+            src="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU"
+            alt="Bulldozer" />
+          <div>
+            <div className="nav-title">Bulldozer collective</div>
+            <div className="nav-sub">Création des prez R2</div>
+          </div>
+        </div>
+
+        {/* Bouton d'action principale — redirige vers le formulaire de création */}
+        <div className="nav-new-wrap">
+          <button className="nav-new" onClick={()=>window.location.href='nouveau.html'}>Nouvelle présentation</button>
+        </div>
+
+        {/* Lien de retour vers la page d'accueil */}
+        <div style={{padding:'6px 8px'}}>
+          <button className="nav-btn" onClick={()=>window.location.href='index.html'}>
+            🏠 Accueil
+          </button>
+        </div>
+
+        {/* Barre de recherche — filtre côté client (état local uniquement) */}
+        <div className="nav-search-wrap" style={{position:'relative'}}>
+          <span className="nav-search-icon">🔍</span>
+          <input className="nav-search" placeholder="Rechercher..." value={search} onChange={e=>setSearch(e.target.value)} />
+        </div>
+
+        {/* Section des présentations récentes chargées depuis localStorage */}
+        <div className="nav-section">Récent</div>
+        <div className="nav-list">
+          {/* Affiche les 6 présentations les plus récentes avec icône du levier et date */}
+          {recent.map(p => (
+            <div key={p.id} className="nav-item" onClick={()=>window.location.href=`nouveau.html?id=${p.id}`}>
+              <div className="nav-item-left">
+                {/* Icône du premier levier actif de la présentation */}
+                <span style={{fontSize:17}}>{LEVER_ICONS[p.activeLevers[0]]||'📋'}</span>
+                <span className="nav-item-name">{p.clientName}</span>
+              </div>
+              <span style={{fontSize:14,color:'var(--text-3)',flexShrink:0,marginLeft:4}}>{fmtDate(p.createdAt)}</span>
+            </div>
+          ))}
+          {/* Message affiché quand aucune présentation n'existe encore */}
+          {recent.length===0 && <div style={{fontSize:17,color:'var(--text-3)',padding:'8px 10px'}}>Aucune présentation</div>}
+        </div>
+
+        {/* Pied de navigation : liens utilitaires et profil connecté */}
+        <div className="nav-bottom">
+          <button className="nav-btn" onClick={()=>window.location.href='aide.html'}>❓ Aide</button>
+          {/* Bouton Paramètres marqué "active" car on est sur cette page */}
+          <button className="nav-btn active" onClick={()=>window.location.href='parametres.html'}>⚙️ Paramètres</button>
+
+          {/* Affichage conditionnel du profil utilisateur connecté dans la nav.
+              Utilise une IIFE (fonction auto-exécutée) pour extraire les données du BP
+              correspondant et calculer ses initiales. */}
+          {settings && settings.currentUser && (()=>{
+            const bp=(settings.bps||[]).find(b=>b.name===settings.currentUser)||{color:'#D4FF00',tc:'#000',role:'Utilisateur'};
+            const ini=settings.currentUser.split(/[-\s]/).map(p=>p[0]).join('').toUpperCase().slice(0,2);
+            return (
+              <div style={{borderTop:'1px solid var(--border)',marginTop:6,paddingTop:6}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,cursor:'pointer',transition:'background 0.1s'}}
+                  onMouseEnter={e=>e.currentTarget.style.background='var(--bg-hover)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  {/* Avatar circulaire avec les initiales du BP */}
+                  <div style={{width:36,height:36,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:13,background:bp.color,color:bp.tc}}>
+                    {ini}
+                  </div>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontSize:17,fontWeight:600,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{settings.currentUser}</div>
+                    <div style={{fontSize:14,color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{bp.role}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </nav>
+
+      {/* ============================================================
+          ZONE DE CONTENU PRINCIPALE
+          Contient la barre de titre sticky et les trois sections
+          de paramètres : Profil, Intégrations MCP et Équipe.
+          ============================================================ */}
+      <div className="main">
+        {/* Barre supérieure avec le titre de la page et le bouton de notifications */}
+        <div className="top-bar">
+          <div>
+            <div className="top-title">Paramètres</div>
+            <div className="top-sub">Configuration de votre espace</div>
+          </div>
+          {/* Bouton notifications (placeholder visuel, non fonctionnel) */}
+          <button style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'var(--text-2)',padding:'7px 9px',borderRadius:8,transition:'all 0.12s',lineHeight:1}}
+            onMouseEnter={e=>{e.currentTarget.style.background='var(--bg-hover)';e.currentTarget.style.color='var(--text)';}}
+            onMouseLeave={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='var(--text-2)';}}>🔔</button>
+        </div>
+
+        <div className="content">
+
+          {/* ============================================================
+              SECTION 1 : MON PROFIL
+              Permet de sélectionner le BP actif. L'utilisateur sélectionné
+              sera automatiquement pré-rempli dans le champ "Business Partner"
+              du formulaire de création de présentation (nouveau.html).
+              Cliquer sur un profil déjà sélectionné le désélectionne.
+              ============================================================ */}
+          <div className="section">
+            <div className="section-title">Mon profil</div>
+            <div className="section-sub">Choisissez votre identité — le formulaire de création sera pré-rempli avec votre nom.</div>
+            <div className="card">
+              {/* Grille des profils — chaque carte est cliquable pour se connecter/déconnecter */}
+              <div className="profile-grid">
+                {settings.bps.map(bp => (
+                  <div key={bp.name} className={`profile-card${settings.currentUser===bp.name?' selected':''}`} onClick={()=>selectUser(bp.name)}>
+                    <div>
+                      {/* Avatar avec initiales et couleur personnalisée */}
+                      {bp.photo
+                        ? <img src={bp.photo} alt={bp.name} style={{width:44,height:44,borderRadius:'50%',objectFit:'cover',margin:'0 auto 8px',display:'block',border:`2px solid ${bp.color}`}}/>
+                        : <div className="profile-av" style={{background:bp.color,color:bp.tc,margin:'0 auto 8px'}}>{initials(bp.name)}</div>
+                      }
+                      <div className="profile-name">{bp.name}</div>
+                      <div className="profile-role">{bp.role}</div>
+                    </div>
+                    {/* Indicateur visuel "Connecté" affiché uniquement sur le profil actif */}
+                    {settings.currentUser===bp.name && (
+                      <div style={{marginTop:8,fontSize:13,fontWeight:700,color:'var(--accent)'}}>● Connecté</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* Message d'information quand aucun profil n'est sélectionné */}
+              {!settings.currentUser && (
+                <div style={{marginTop:16,fontSize:17,color:'var(--text-3)',textAlign:'center'}}>Aucun profil sélectionné — le champ BP restera visible dans le formulaire.</div>
+              )}
+            </div>
+          </div>
+
+          {/* ============================================================
+              SECTION 2 : INTEGRATIONS MCP (Model Context Protocol)
+              Configure les outils externes que Claude Code peut utiliser
+              lors de la génération automatique des présentations R2.
+
+              Divisée en deux groupes :
+              - Outils principaux : activés par défaut (Canva, Claap, etc.)
+              - Alternatives : désactivés par défaut, remplacent un outil
+                principal (ex: Salesforce remplace HubSpot)
+
+              L'état de chaque toggle est persisté dans settings.mcps[toolId].
+              ============================================================ */}
+          <div className="section">
+            <div className="section-title">Intégrations MCP</div>
+            <div className="section-sub">Activez les outils connectés dans votre espace Claude Code. Claude les utilisera automatiquement lors des générations.</div>
+
+            {/* Groupe des outils principaux (primary:true) */}
+            <div className="sep-label">Outils principaux</div>
+            <div className="mcp-grid">
+              {primaryMcps.map(tool => (
+                <div key={tool.id} className={`mcp-card${settings.mcps[tool.id]?' on':''}`}>
+                  <div className="mcp-icon">{tool.logo?<img src={tool.logo} alt={tool.name}/>:tool.icon}</div>
+                  <div className="mcp-info">
+                    <div className="mcp-name">{tool.name}</div>
+                    <div className="mcp-desc">{tool.desc}</div>
+                    <div className="mcp-cat">{tool.category}</div>
+                  </div>
+                  {/* Toggle on/off — met à jour settings.mcps[tool.id] */}
+                  <Toggle on={settings.mcps[tool.id]} onChange={()=>toggleMcp(tool.id)} />
+                </div>
+              ))}
+            </div>
+
+            {/* Groupe des outils alternatifs (primary:false) — chacun remplace un outil principal */}
+            <div className="sep-label">Alternatives</div>
+            <div className="mcp-grid">
+              {altMcps.map(tool => (
+                <div key={tool.id} className={`mcp-card${settings.mcps[tool.id]?' on':''}`}>
+                  <div className="mcp-icon">{tool.logo?<img src={tool.logo} alt={tool.name}/>:tool.icon}</div>
+                  <div className="mcp-info">
+                    <div className="mcp-name">{tool.name}</div>
+                    <div className="mcp-desc">{tool.desc}</div>
+                    <div className="mcp-cat">{tool.category}</div>
+                  </div>
+                  <Toggle on={settings.mcps[tool.id]} onChange={()=>toggleMcp(tool.id)} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ============================================================
+              SECTION 3 : EQUIPE
+              Gestion des Business Partners de l'espace Bulldozer.
+
+              Affiche la liste complète des BPs avec :
+              - Avatar coloré avec initiales
+              - Nom et rôle
+              - Indicateur "vous" si c'est l'utilisateur connecté
+              - Bouton de suppression (avec déconnexion auto si nécessaire)
+
+              Un formulaire en bas permet d'ajouter de nouveaux membres
+              avec nom, rôle personnalisé et choix de couleur d'avatar.
+              ============================================================ */}
+          <div className="section">
+            <div className="section-title">Équipe</div>
+            <div className="section-sub">Gérez les Business Partners et utilisateurs de l'espace.</div>
+            <div className="card">
+              {/* Liste des Business Partners existants */}
+              {settings.bps.map(bp => (
+                <div key={bp.name} className="team-row">
+                  {/* Avatar avec photo LinkedIn ou initiales */}
+                  {bp.photo
+                    ? <img src={bp.photo} alt={bp.name} style={{width:36,height:36,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${bp.color}`}}/>
+                    : <div className="team-av" style={{background:bp.color,color:bp.tc}}>{initials(bp.name)}</div>
+                  }
+                  <div style={{flex:1}}>
+                    <div className="team-name">{bp.name} {settings.currentUser===bp.name&&<span style={{fontSize:14,fontWeight:700,color:'var(--accent)',marginLeft:6}}>● vous</span>}</div>
+                    <div className="team-role">{bp.role}</div>
+                    {/* Édition de la photo */}
+                    {editPhotoId===bp.name ? (
+                      <div style={{display:'flex',gap:6,marginTop:4}}>
+                        <input className="inp" value={editPhotoUrl} onChange={e=>setEditPhotoUrl(e.target.value)} placeholder="URL photo LinkedIn..." style={{flex:1,fontSize:12,padding:'4px 8px'}} onKeyDown={e=>e.key==='Enter'&&updateBpPhoto(bp.name,editPhotoUrl)}/>
+                        <button className="btn-p" onClick={()=>updateBpPhoto(bp.name,editPhotoUrl)}>OK</button>
+                        <button className="btn-g" onClick={()=>{setEditPhotoId(null);setEditPhotoUrl('');}}>Annuler</button>
+                      </div>
+                    ) : (
+                      <button className="btn-g" style={{fontSize:11,padding:'2px 6px',marginTop:3}} onClick={()=>{setEditPhotoId(bp.name);setEditPhotoUrl(bp.photo||'');}}>
+                        {bp.photo?'Modifier la photo':'Ajouter une photo'}
+                      </button>
+                    )}
+                  </div>
+                  <button className="btn-danger" onClick={()=>removeBp(bp.name)} title="Supprimer">✕</button>
+                </div>
+              ))}
+
+              {/* ── Formulaire d'ajout d'un nouveau membre ──
+                  Champs : nom (requis), rôle (défaut "Business Partner"),
+                  couleur d'avatar et bouton de validation.
+                  L'appui sur Entrée dans le champ nom déclenche aussi l'ajout. */}
+              <div style={{marginTop:20,paddingTop:20,borderTop:'1px solid var(--border)'}}>
+                <div style={{fontSize:18,fontWeight:700,marginBottom:14}}>Ajouter un membre</div>
+                <div className="add-form">
+                  {/* Champ nom — validation via Enter ou clic sur le bouton */}
+                  <div>
+                    <label className="flbl">Nom</label>
+                    <input className="inp" value={newBpName} onChange={e=>setNewBpName(e.target.value)} placeholder="Prénom Nom" onKeyDown={e=>e.key==='Enter'&&addBp()} />
+                  </div>
+                  {/* Champ rôle — libre, pré-rempli avec "Business Partner" */}
+                  <div>
+                    <label className="flbl">Rôle</label>
+                    <input className="inp" value={newBpRole} onChange={e=>setNewBpRole(e.target.value)} placeholder="Business Partner" />
+                  </div>
+                  {/* Sélecteur de couleur — pastilles cliquables avec bordure sur la sélection */}
+                  <div>
+                    <label className="flbl">Couleur</label>
+                    <div style={{display:'flex',gap:5,flexWrap:'wrap',paddingTop:3}}>
+                      {COLOR_OPTIONS.map(c => (
+                        <div key={c} onClick={()=>setNewBpColor(c)} style={{width:28,height:28,borderRadius:'50%',background:c,cursor:'pointer',border:newBpColor===c?'3px solid var(--text)':'3px solid transparent',transition:'border 0.1s'}}/>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Champ URL photo LinkedIn — optionnel */}
+                  <div>
+                    <label className="flbl">Photo (URL)</label>
+                    <input className="inp" value={newBpPhoto} onChange={e=>setNewBpPhoto(e.target.value)} placeholder="URL LinkedIn..." />
+                  </div>
+                  {/* Bouton d'ajout — désactivé visuellement si le nom est vide */}
+                  <div style={{paddingTop:30}}>
+                    <button className="btn-p" onClick={addBp} disabled={!newBpName.trim()} style={{opacity:newBpName.trim()?1:0.4}}>+ Ajouter</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Notification toast — affichée conditionnellement en bas à droite */}
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* Point d'entrée React — monte le composant App dans le div #root via createRoot (React 18) */
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<!-- =======================================================================
+     AIDE.HTML — Page d'aide / FAQ de l'application Master R2
+     Affiche une liste de questions frequentes sous forme d'accordeon.
+     Partage la barre de navigation laterale avec les autres pages
+     (index.html, nouveau.html, parametres.html).
+     ======================================================================= -->
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<link rel="icon" type="image/png" href="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aide — Création des prez R2</title>
+
+<!-- Chargement des dependances React (mode developpement) et Babel
+     pour permettre l'ecriture JSX directement dans le navigateur -->
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* =================================================================
+     VARIABLES CSS GLOBALES (theme sombre Bulldozer)
+     Palette partagee avec toutes les pages de l'application.
+     Les couleurs utilisent des tons kaki/olive pour le fond,
+     avec un accent vert-jaune (#D4FF00) pour les actions principales.
+     ================================================================= */
+  :root {
+    --bg:        #303028;      /* Fond principal de la page */
+    --bg-nav:    #252523;      /* Fond de la barre de navigation laterale */
+    --bg-card:   #363632;      /* Fond des cartes (questions FAQ) */
+    --bg-input:  #3C3C38;      /* Fond des champs de saisie */
+    --bg-hover:  #3A3A36;      /* Fond au survol des elements cliquables */
+    --border:    #484844;      /* Couleur des bordures et separateurs */
+    --text:      #F2F2F7;      /* Texte principal (quasi-blanc) */
+    --text-2:    #AEAEB2;      /* Texte secondaire (gris clair) */
+    --text-3:    #6E6E73;      /* Texte tertiaire (gris fonce, labels) */
+    --accent:    #D4FF00;      /* Couleur d'accentuation Bulldozer (vert-jaune) */
+    --accent-bg: rgba(212,255,0,0.06); /* Fond subtil pour les elements actifs */
+    --error:     #FF453A;      /* Couleur d'erreur (rouge) */
+  }
+
+  /* --- Reset et styles de base --- */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui,-apple-system,'Segoe UI',sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, .nav-title, .top-title, .section-title, .stat-val, .nav-brand { font-family: 'Inconsolata',monospace; }
+
+  /* --- Personnalisation de la scrollbar (WebKit) --- */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* --- Liens et boutons : reset des styles par defaut --- */
+  a { text-decoration: none; color: inherit; }
+  button { font-family: inherit; }
+
+  /* =================================================================
+     LAYOUT PRINCIPAL : conteneur flex pleine hauteur
+     Compose de la navigation laterale (.nav) et du contenu (.main).
+     ================================================================= */
+  .shell { display: flex; height: 100vh; overflow: hidden; }
+
+  /* --- Barre de navigation laterale (partagee sur toutes les pages) ---
+     Largeur fixe de 300px, colonne flex avec logo, bouton, recherche,
+     liste des presentations recentes et liens utilitaires en bas. */
+  .nav {
+    width: 300px; flex-shrink: 0; background: var(--bg-nav);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    height: 100vh; overflow: hidden;
+  }
+  /* Logo Bulldozer et titre de l'application en haut de la nav */
+  .nav-logo {
+    padding: 18px 16px 16px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo-img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+  .nav-title { font-size: 15px; font-weight: 700; }
+  .nav-sub   { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+
+  /* Bouton "Nouvelle presentation" — action principale de la nav */
+  .nav-new-wrap { padding: 12px; border-bottom: 1px solid var(--border); }
+  .nav-new {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-radius: 6px; background: var(--accent); color: #000; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s; border: none; width: 100%;
+    justify-content: center;
+  }
+  .nav-new:hover { background: #B8E600; }
+
+  /* Champ de recherche dans la barre laterale */
+  .nav-search-wrap { padding: 12px; border-bottom: 1px solid var(--border); }
+  .nav-search {
+    background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px 8px 32px; font-size: 14px; color: var(--text); width: 100%; outline: none;
+    transition: border-color 0.15s;
+  }
+  .nav-search:focus { border-color: var(--accent); }
+  .nav-search::placeholder { color: var(--text-3); }
+  .nav-search-icon { position: absolute; left: 23px; top: 50%; transform: translateY(-50%); font-size: 16px; color: var(--text-3); pointer-events: none; }
+
+  /* Section "Recent" : titre de rubrique et liste des presentations recentes */
+  .nav-section { padding: 12px 14px 5px; font-size: 14px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+  .nav-list { padding: 0 8px; flex: 1; overflow-y: auto; }
+  .nav-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; border-radius: 7px; cursor: pointer;
+    transition: background 0.1s; margin-bottom: 1px;
+  }
+  .nav-item:hover { background: var(--bg-hover); }
+  .nav-item-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .nav-item-name { font-size: 14px; font-weight: 500; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Zone inferieure de la nav : liens Aide, Parametres et profil utilisateur */
+  .nav-bottom { border-top: 1px solid var(--border); padding: 8px; }
+  .nav-btn {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    border-radius: 7px; cursor: pointer; transition: background 0.1s; width: 100%;
+    background: none; border: none; color: var(--text-2); font-size: 14px; font-weight: 500;
+  }
+  .nav-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .nav-btn.active { background: var(--accent-bg); color: var(--text); border: 1px solid rgba(212,255,0,0.15); }
+
+  /* =================================================================
+     ZONE DE CONTENU PRINCIPAL (a droite de la nav)
+     Contient la barre superieure sticky et le contenu scrollable.
+     ================================================================= */
+  .main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+  /* Barre superieure fixe avec titre de la page et bouton notification */
+  .top-bar {
+    padding: 20px 36px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg); position: sticky; top: 0; z-index: 5;
+  }
+  .top-title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+  .top-sub { font-size: 13px; color: var(--text-3); margin-top: 2px; }
+
+  /* Zone de contenu limitee en largeur pour une meilleure lisibilite */
+  .content { padding: 28px 36px; flex: 1; max-width: 860px; }
+
+  /* =================================================================
+     STYLES FAQ / ACCORDEON
+     Chaque question est une carte (.faq-item) qui s'ouvre au clic.
+     L'etat ouvert est gere par la classe .open ajoutee via React.
+     ================================================================= */
+  .faq-item {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    margin-bottom: 12px; overflow: hidden; transition: border-color 0.15s;
+  }
+  /* Bordure accent subtile quand la question est ouverte */
+  .faq-item.open { border-color: rgba(212,255,0,0.2); }
+
+  /* En-tete cliquable de chaque question (fleche a droite) */
+  .faq-q {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px; cursor: pointer; gap: 16px;
+    font-size: 15px; font-weight: 600; color: var(--text);
+    user-select: none;
+  }
+  .faq-q:hover { background: var(--bg-hover); }
+  /* Chevron (fleche) qui tourne a 180 degres a l'ouverture */
+  .faq-chevron {
+    width: 22px; height: 22px; flex-shrink: 0; display: flex; align-items: center;
+    justify-content: center; color: var(--text-3); transition: transform 0.2s;
+    font-style: normal; font-size: 14px;
+  }
+  .faq-item.open .faq-chevron { transform: rotate(180deg); color: var(--accent); }
+
+  /* Bloc de reponse affiche sous la question (rendu conditionnel via React) */
+  .faq-a {
+    padding: 0 24px 20px; font-size: 14px; color: var(--text-2); line-height: 1.65;
+    border-top: 1px solid var(--border);
+  }
+  .faq-a p { margin: 12px 0 0; }
+  .faq-a p:first-child { margin-top: 16px; }
+  /* Etiquettes colorees pour les noms de leviers dans les reponses FAQ */
+  .faq-tag {
+    display: inline-block; font-size: 13px; font-weight: 700; padding: 2px 8px;
+    border-radius: 4px; font-family: "SF Mono", monospace; margin: 0 2px;
+  }
+</style>
+</head>
+<body>
+<!-- Point de montage React : l'application entiere est rendue ici -->
+<div id="root"></div>
+
+<script type="text/babel">
+/* =======================================================================
+   LOGIQUE JAVASCRIPT / REACT
+   Page d'aide de Master R2 — FAQ en accordeon avec navigation partagee.
+   Utilise React 18 (mode developpement) + Babel pour la transpilation JSX.
+   ======================================================================= */
+
+// Hooks React utilises dans les composants
+const { useState, useEffect } = React;
+
+/* -------------------------------------------------------------------
+   CONSTANTES UTILITAIRES (partagees avec les autres pages)
+   ------------------------------------------------------------------- */
+
+// Icones associees a chaque levier marketing pour l'affichage dans la nav
+const LEVER_ICONS = { SEO:'🔍', SEA:'💰', CRO:'⚡', GEO:'🤖', SMA:'📣' };
+
+// Formate une date ISO en format court francais (ex: "9 avr.")
+function fmtDate(iso) { return new Date(iso).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}); }
+
+// Extrait les initiales d'un nom (ex: "Jean-Pierre Dupont" → "JD")
+function initials(name) { return name.split(/[-\s]/).map(p=>p[0]).join('').toUpperCase().slice(0,2); }
+
+/* =======================================================================
+   DONNEES FAQ — Tableau de questions/reponses
+   Chaque entree contient :
+     - q : la question affichee dans l'en-tete de l'accordeon
+     - a : le contenu JSX de la reponse (rendu conditionnellement a l'ouverture)
+   L'ordre du tableau determine l'ordre d'affichage sur la page.
+   ======================================================================= */
+const FAQS = [
+  /* FAQ 1 : Guide de creation d'une presentation — parcours en 4 etapes */
+  {
+    q: "Comment créer une nouvelle présentation R2 ?",
+    a: <>
+      <p>Cliquez sur <strong>Nouvelle présentation</strong> dans le menu gauche ou depuis l'accueil.</p>
+      <p><strong>Étape 1 :</strong> Renseignez les infos client (nom, URL, Claap du R1) et sélectionnez les leviers activés ainsi que les slides à inclure.</p>
+      <p><strong>Étape 2 :</strong> Copiez la commande générée et collez-la dans Claude Code. Claude exécutera automatiquement toute la génération (analyse du Claap, récupération des données, remplissage du Canva).</p>
+      <p><strong>Étape 3 :</strong> Relisez le contenu généré avant export.</p>
+      <p><strong>Étape 4 :</strong> Récupérez le lien Canva final pour partager ou présenter.</p>
+    </>
+  },
+  /* FAQ 2 : Fonctionnement technique de la generation via Claude Code et les outils MCP */
+  {
+    q: "Comment fonctionne la génération automatique avec Claude ?",
+    a: <>
+      <p>L'outil génère une commande Claude Code structurée (JSON + instructions) à partir de vos données. Une fois collée dans Claude Code, cette commande orchestre plusieurs outils MCP en séquence :</p>
+      <p>• <strong>Claap MCP</strong> — transcription automatique de l'enregistrement R1</p>
+      <p>• <strong>Canva MCP</strong> — duplication du template et mise à jour des slides</p>
+      <p>• <strong>Notion/HubSpot MCP</strong> (optionnel) — enrichissement du contexte client</p>
+      <p>Assurez-vous que les intégrations nécessaires sont activées dans <strong>Paramètres → Intégrations MCP</strong>.</p>
+    </>
+  },
+  /* FAQ 3 : Ou trouver et comment formater l'URL Claap du R1 */
+  {
+    q: "Où trouver l'URL Claap du R1 ?",
+    a: <>
+      <p>Accédez à <strong>app.claap.io</strong>, naviguez vers l'enregistrement du R1 correspondant au client. Copiez l'URL depuis la barre d'adresse ou depuis le bouton "Partager" du clip.</p>
+      <p>Le format attendu est : <code style={{background:'var(--bg-input)',padding:'2px 6px',borderRadius:4,fontSize:16}}>https://app.claap.io/[espace]/[slug-du-clip]</code></p>
+      <p>Si l'intégration Claap MCP est active dans les paramètres, Claude recherchera automatiquement la transcription à partir de cette URL.</p>
+    </>
+  },
+  /* FAQ 4 : Explication du systeme de leviers marketing et des slides associees */
+  {
+    q: "Comment fonctionnent les leviers et les slides ?",
+    a: <>
+      <p>Chaque présentation R2 est construite autour des <strong>leviers activés</strong> pour le client. Les leviers disponibles sont :</p>
+      <p>
+        {/* Generation dynamique des badges colores pour chaque levier */}
+        {[
+          ['SEO','#C8F040'],['SEA','#80C8FF'],['CRO','#FF9870'],
+          ['SMA Meta','#D0A0FF'],['SMA LinkedIn','#FFB0C8'],
+          ['ABM','#90E878'],['ABX','#70D8D0'],['Forecast','#FBBF24']
+        ].map(([l,c])=>(
+          <span key={l} className="faq-tag" style={{background:c,color:'#1C1C1E'}}>{l}</span>
+        ))}
+      </p>
+      <p>Pour chaque levier actif, une slide <strong>Préaudit</strong> dédiée est automatiquement ajoutée. Les autres sections (Disclaimer, Contexte client, Pricing…) sont cochées par défaut mais peuvent être désactivées individuellement dans le formulaire.</p>
+    </>
+  },
+  /* FAQ 5 : Depannage lorsque le lien Canva n'est pas recupere automatiquement */
+  {
+    q: "Que faire si le lien Canva n'apparaît pas après génération ?",
+    a: <>
+      <p>Si le lien Canva n'est pas récupéré automatiquement, plusieurs options :</p>
+      <p><strong>1.</strong> Vérifiez que l'intégration <strong>Canva MCP</strong> est activée dans les paramètres et correctement configurée dans votre Claude Code.</p>
+      <p><strong>2.</strong> Dans Claude Code, demandez à Claude : <em>"Donne-moi le lien de la présentation Canva que tu viens de créer."</em></p>
+      <p><strong>3.</strong> Collez manuellement l'URL Canva dans la fiche de la présentation via le bouton <strong>Formulaire</strong> depuis l'accueil.</p>
+      <p>Une fois le lien renseigné, le bouton "Accéder sur Canva" apparaîtra dans le tableau.</p>
+    </>
+  },
+];
+
+/* =======================================================================
+   COMPOSANT FaqItem — Element d'accordeon individuel
+   Gere son propre etat ouvert/ferme via useState.
+   Au clic sur la question, bascule l'affichage de la reponse.
+   La classe CSS "open" est ajoutee pour les animations (chevron, bordure).
+   La reponse est montee/demontee du DOM (rendu conditionnel) pour
+   garder le DOM leger quand beaucoup de questions sont fermees.
+   ======================================================================= */
+function FaqItem({ faq }) {
+  // Etat local : la question est-elle ouverte ?
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`faq-item${open?' open':''}`}>
+      {/* Zone cliquable : question + chevron indicateur */}
+      <div className="faq-q" onClick={()=>setOpen(o=>!o)}>
+        <span>{faq.q}</span>
+        <i className="faq-chevron">▼</i>
+      </div>
+      {/* Reponse affichee uniquement si la question est ouverte */}
+      {open && <div className="faq-a">{faq.a}</div>}
+    </div>
+  );
+}
+
+/* =======================================================================
+   COMPOSANT App — Composant racine de la page Aide
+   Structure : barre de navigation laterale (partagee) + zone principale FAQ.
+   Charge les parametres et les presentations recentes depuis le localStorage
+   pour alimenter la sidebar.
+   ======================================================================= */
+function App() {
+  // Etat du champ de recherche dans la barre laterale
+  const [search, setSearch] = useState('');
+
+  // Parametres de l'application (utilisateur courant, business partners, etc.)
+  const [settings, setSettings] = useState(null);
+
+  // Chargement initial des parametres depuis le localStorage
+  // Cle 'master_r2_settings' : objet JSON contenant currentUser, bps[], etc.
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('master_r2_settings')||'null');
+      setSettings(s);
+    } catch {}
+  }, []);
+
+  // Recuperation des 6 presentations les plus recentes pour la sidebar
+  // Cle 'master_r2_v1' : tableau JSON de toutes les presentations sauvegardees
+  const recent = (() => {
+    try {
+      const d = JSON.parse(localStorage.getItem('master_r2_v12')||'[]');
+      return [...d].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,6);
+    } catch { return []; }
+  })();
+
+  return (
+    <div className="shell">
+
+      {/* ===== BARRE DE NAVIGATION LATERALE (identique sur toutes les pages) ===== */}
+      <nav className="nav">
+        {/* Logo et nom de l'app — clic redirige vers l'accueil */}
+        <div className="nav-logo" style={{cursor:'pointer'}} onClick={()=>window.location.href='index.html'}>
+          <img
+            className="nav-logo-img"
+            src="https://media.licdn.com/dms/image/v2/D560BAQEqNfme3YnQxQ/company-logo_200_200/company-logo_200_200/0/1709226778326/bulldozer_collective_logo?e=2147483647&v=beta&t=EfOIpZ5HAlbTa98amRBOd-2GdauQiM950enCKNvnlyU"
+            alt="Bulldozer"
+          />
+          <div>
+            <div className="nav-title">Bulldozer collective</div>
+            <div className="nav-sub">Création des prez R2</div>
+          </div>
+        </div>
+
+        {/* Bouton d'action principale : creer une nouvelle presentation */}
+        <div className="nav-new-wrap">
+          <button className="nav-new" onClick={()=>window.location.href='nouveau.html'}>Nouvelle présentation</button>
+        </div>
+
+        {/* Lien rapide vers la page d'accueil */}
+        <div style={{padding:'4px 8px'}}>
+          <button className="nav-btn" onClick={()=>window.location.href='index.html'}>🏠 Accueil</button>
+        </div>
+
+        {/* Barre de recherche (filtre les presentations dans la sidebar) */}
+        <div className="nav-search-wrap" style={{position:'relative'}}>
+          <span className="nav-search-icon">🔍</span>
+          <input className="nav-search" placeholder="Rechercher..." value={search} onChange={e=>setSearch(e.target.value)} />
+        </div>
+
+        {/* Liste des presentations recentes — chaque item redirige vers le formulaire */}
+        <div className="nav-section">Récent</div>
+        <div className="nav-list">
+          {recent.map(p => (
+            <div key={p.id} className="nav-item" onClick={()=>window.location.href=`nouveau.html?id=${p.id}`}>
+              <div className="nav-item-left">
+                {/* Icone du premier levier actif, ou icone par defaut */}
+                <span style={{fontSize:17}}>{LEVER_ICONS[p.activeLevers?.[0]]||'📋'}</span>
+                <span className="nav-item-name">{p.clientName}</span>
+              </div>
+              {/* Date de creation formatee en francais */}
+              <span style={{fontSize:14,color:'var(--text-3)',flexShrink:0,marginLeft:4}}>{fmtDate(p.createdAt)}</span>
+            </div>
+          ))}
+          {/* Message vide si aucune presentation n'existe encore */}
+          {recent.length===0 && <div style={{fontSize:17,color:'var(--text-3)',padding:'8px 10px'}}>Aucune présentation</div>}
+        </div>
+
+        {/* --- Zone inferieure de la nav : liens utilitaires + profil --- */}
+        <div className="nav-bottom">
+          {/* Bouton Aide marque comme actif (.active) car on est sur cette page */}
+          <button className="nav-btn active">❓ Aide</button>
+          <button className="nav-btn" onClick={()=>window.location.href='parametres.html'}>⚙️ Paramètres</button>
+
+          {/* Affichage du profil utilisateur connecte (si defini dans les parametres).
+              Recherche le business partner correspondant pour obtenir sa couleur et son role.
+              Utilise une IIFE (fonction auto-executee) pour calculer les variables locales. */}
+          {settings?.currentUser && (()=>{
+            const bp=(settings.bps||[]).find(b=>b.name===settings.currentUser)||{color:'#D4FF00',tc:'#000',role:'Utilisateur'};
+            const ini=settings.currentUser.split(/[-\s]/).map(p=>p[0]).join('').toUpperCase().slice(0,2);
+            return (
+              <div style={{borderTop:'1px solid var(--border)',marginTop:6,paddingTop:6}}>
+                {/* Carte profil cliquable — redirige vers les parametres */}
+                <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,cursor:'pointer',transition:'background 0.1s'}}
+                  onClick={()=>window.location.href='parametres.html'}
+                  onMouseEnter={e=>e.currentTarget.style.background='var(--bg-hover)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  {/* Avatar avec photo LinkedIn ou initiales */}
+                  {bp.photo
+                    ? <img src={bp.photo} alt={settings.currentUser} style={{width:36,height:36,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${bp.color}`}}/>
+                    : <div style={{width:36,height:36,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:13,background:bp.color,color:bp.tc}}>{ini}</div>
+                  }
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontSize:17,fontWeight:600,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{settings.currentUser}</div>
+                    <div style={{fontSize:14,color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{bp.role}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </nav>
+
+      {/* ===== ZONE DE CONTENU PRINCIPAL ===== */}
+      <div className="main">
+
+        {/* Barre superieure sticky : titre de la page + bouton notification */}
+        <div className="top-bar">
+          <div>
+            <div className="top-title">Aide</div>
+            <div className="top-sub">Questions fréquentes sur l'utilisation de Master R2</div>
+          </div>
+          {/* Bouton notification (decoratif pour l'instant) */}
+          <button style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'var(--text-2)',padding:'7px 9px',borderRadius:8,transition:'all 0.12s',lineHeight:1}}
+            onMouseEnter={e=>{e.currentTarget.style.background='var(--bg-hover)';e.currentTarget.style.color='var(--text)';}}
+            onMouseLeave={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='var(--text-2)';}}>🔔</button>
+        </div>
+
+        {/* Liste des questions FAQ — chaque element est un accordeon independant */}
+        <div className="content">
+          {FAQS.map((faq, i) => <FaqItem key={i} faq={faq} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Initialisation React 18 : montage de l'application dans le DOM
+// createRoot est l'API React 18 qui remplace ReactDOM.render
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
