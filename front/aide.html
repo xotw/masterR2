@@ -185,6 +185,7 @@
 <!-- Point de montage React : l'application entiere est rendue ici -->
 <div id="root"></div>
 
+<script src="api.js"></script>
 <script type="text/babel">
 /* =======================================================================
    LOGIQUE JAVASCRIPT / REACT
@@ -318,20 +319,18 @@ function App() {
   // Chargement initial des parametres depuis le localStorage
   // Cle 'master_r2_settings' : objet JSON contenant currentUser, bps[], etc.
   useEffect(() => {
-    try {
-      const s = JSON.parse(localStorage.getItem('master_r2_settings')||'null');
-      setSettings(s);
-    } catch {}
+    const local = (() => { try { return JSON.parse(localStorage.getItem('master_r2_settings')||'null'); } catch { return null; } })();
+    setSettings(local);
   }, []);
 
   // Recuperation des 6 presentations les plus recentes pour la sidebar
   // Cle 'master_r2_v1' : tableau JSON de toutes les presentations sauvegardees
-  const recent = (() => {
-    try {
-      const d = JSON.parse(localStorage.getItem('master_r2_v12')||'[]');
-      return [...d].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,6);
-    } catch { return []; }
-  })();
+  const [recent, setRecent] = useState([]);
+  useEffect(() => {
+    apiFetchPresentations().then(d => {
+      setRecent([...d].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,6));
+    }).catch(() => {});
+  }, []);
 
   return (
     <div className="shell">

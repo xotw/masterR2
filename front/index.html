@@ -264,6 +264,7 @@
      Architecture : composants fonctionnels avec hooks (useState, useEffect, useMemo).
      Persistance : les donnees sont lues/ecrites dans le localStorage.
      ============================================================================= -->
+<script src="api.js"></script>
 <script type="text/babel">
 // Hooks React utilises dans l'application
 const { useState, useEffect, useMemo } = React;
@@ -272,16 +273,10 @@ const { useState, useEffect, useMemo } = React;
    CONSTANTES DE CONFIGURATION
    --------------------------------------------------------------------------- */
 
-// Cle de stockage localStorage — le suffixe _v12 sert de versioning.
-// En cas de changement de structure de donnees, incrementer le numero
-// pour forcer un reset (les anciennes donnees ne seront plus chargees).
-// Partagee avec nouveau.html et parametres.html pour la coherence des donnees.
-const STORAGE_KEY = 'master_r2_v12';
-
 // Liste des Business Partners (BP) de Bulldozer Collective.
 // Chaque BP a une couleur d'avatar et un role (Fondateur ou Business Partner).
 // 'tc' = text color (couleur du texte sur l'avatar colore).
-const BPS = [
+let BPS = [
   { name:'Jordan',        role:'Fondateur',        color:'#D4FF00', tc:'#000', photo:'https://media.licdn.com/dms/image/v2/D4D03AQHiOsHCMbDmmA/profile-displayphoto-shrink_800_800/B4DZUfIgeIHkAc-/0/1739984079211?e=1777507200&v=beta&t=gaJ2BLoTZH9XIFZiKbTlHSHazz4Cso452lxnjKGE11M' },
   { name:'Enguerrand',    role:'Fondateur',        color:'#60A5FA', tc:'#000', photo:'https://media.licdn.com/dms/image/v2/D4E03AQETmOP0jjO2KA/profile-displayphoto-shrink_800_800/B4EZUfUHUuHcAc-/0/1739987124974?e=1777507200&v=beta&t=O7nSUnZlbv7vbeznBqSSM5kYT6BRDXFM3IeU66YcGVo' },
   { name:'Léo',           role:'Business Partner', color:'#F97316', tc:'#fff', photo:'https://media.licdn.com/dms/image/v2/D4E03AQF_3ZMD7mdT6w/profile-displayphoto-shrink_800_800/B4EZVG_Yw8GwAc-/0/1740652776934?e=1777507200&v=beta&t=2BGOfJ_kA8RGUMaOfDLxQK92UKMFEqcMBrfE3N6Umwc' },
@@ -300,39 +295,6 @@ const LEVER_COLORS = {
   'Meta Ads':     { bg:'#D0A0FF', color:'#1C1C1E' },
   'LinkedIn Ads': { bg:'#FFB0C8', color:'#1C1C1E' },
 };
-
-/* ---------------------------------------------------------------------------
-   DONNEES INITIALES (SEED)
-   Jeu de donnees pre-rempli pour les presentations R2.
-   Utilise uniquement au premier chargement (si rien dans le localStorage).
-   Chaque entree contient :
-     - id/num : identifiant unique et numero de reference (R2-XXX)
-     - bp : nom du Business Partner responsable
-     - clientName/clientWebsiteUrl : infos client
-     - canvaUrl : lien vers le design Canva de la presentation
-     - claapUrl : lien vers l'enregistrement Claap de la R1
-     - preAuditUrl : lien vers le pre-audit sur la plateforme BP
-     - activeLevers : leviers marketing actives (SEO, CRO, Google Ads, etc.)
-     - pricing : montant du devis commercial
-     - dateR1/dateR2 : dates des presentations R1 et R2
-     - status : brouillon | en_cours | terminee
-     - createdAt : horodatage de creation
-     - contextSummary : resume du contexte client (entreprise, enjeux, challenges)
-     - analyses : audit detaille par levier avec notes et sous-scores
-   --------------------------------------------------------------------------- */
-const SEED = [
-  { id:'s1',  num:'R2-001', bp:'Pierre-Arnaud', clientName:'Lotchi',              clientWebsiteUrl:'https://lotchi.live',          canvaUrl:'https://www.canva.com/design/DAHEbxMRS_4/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','CRO'],                              pricing:'8 000 \u20ac',   dateR1:'2026-03-18', dateR2:'2026-04-02', status:'terminee',  createdAt:'2026-03-15T10:30:00Z' , contextSummary:{entreprise:"Plateforme de live shopping B2C.",enjeux:"Visibilite organique et conversion.",challenges:"Concurrence forte sur le live commerce."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"CRO":{noteGlobale:7,lectureBusiness:"Le parcours de conversion est trop long et manque de preuves sociales.",sousScores:[{nom:"Ergonomie",note:7,description:"Bon potentiel"},{nom:"Message",note:6.5,description:"En progression"},{nom:"CTA",note:5.5,description:"A renforcer"},{nom:"Reassurance",note:8,description:"Solide"},{nom:"Opportunites",note:6,description:"Correct"}]}} },
-  { id:'s2',  num:'R2-002', bp:'Pierre-Arnaud', clientName:'La Tribu Happy Kids', clientWebsiteUrl:'https://latribuhappykids.fr',  canvaUrl:'https://www.canva.com/design/DAHCiYVgh84/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','Google Ads','Meta Ads','CRO'],      pricing:'102 000 \u20ac', dateR1:'2026-02-25', dateR2:'2026-03-12', status:'terminee',  createdAt:'2026-02-19T08:17:00Z' , contextSummary:{entreprise:"Marque de vetements enfants premium.",enjeux:"Acquisition digitale multi-canal.",challenges:"Marche concurrentiel avec budget limite."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"Google Ads":{noteGlobale:7,lectureBusiness:"Les campagnes search captent du trafic mais le quality score est perfectible.",sousScores:[{nom:"Structure",note:7,description:"Bon potentiel"},{nom:"Mots-cles",note:6.5,description:"En progression"},{nom:"Annonces",note:5.5,description:"A renforcer"},{nom:"Landing pages",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"Meta Ads":{noteGlobale:5.5,lectureBusiness:"Meta genere du volume mais la qualification des leads reste un enjeu.",sousScores:[{nom:"Strategie",note:7,description:"Bon potentiel"},{nom:"Creas",note:6.5,description:"En progression"},{nom:"Ciblage",note:5.5,description:"A renforcer"},{nom:"Budget",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"CRO":{noteGlobale:6,lectureBusiness:"Le parcours de conversion est trop long et manque de preuves sociales.",sousScores:[{nom:"Ergonomie",note:7,description:"Bon potentiel"},{nom:"Message",note:6.5,description:"En progression"},{nom:"CTA",note:5.5,description:"A renforcer"},{nom:"Reassurance",note:8,description:"Solide"},{nom:"Opportunites",note:6,description:"Correct"}]}} },
-  { id:'s4',  num:'R2-004', bp:'Pierre-Arnaud', clientName:'Star Aid',            clientWebsiteUrl:'https://staraid.fr',           canvaUrl:'https://www.canva.com/design/DAHCPh89bss/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','Google Ads','LinkedIn Ads'],        pricing:'189 000 \u20ac', dateR1:'2026-02-18', dateR2:'2026-03-04', status:'en_cours',  createdAt:'2026-02-13T06:15:00Z' , contextSummary:{entreprise:"Solutions RH et bien-etre au travail.",enjeux:"Generation de leads RH qualifies.",challenges:"Acteurs historiques bien implantes."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"Google Ads":{noteGlobale:7,lectureBusiness:"Les campagnes search captent du trafic mais le quality score est perfectible.",sousScores:[{nom:"Structure",note:7,description:"Bon potentiel"},{nom:"Mots-cles",note:6.5,description:"En progression"},{nom:"Annonces",note:5.5,description:"A renforcer"},{nom:"Landing pages",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"LinkedIn Ads":{noteGlobale:5.5,lectureBusiness:"LinkedIn est pertinent pour la cible B2B avec un bon potentiel ABM.",sousScores:[{nom:"Strategie",note:7,description:"Bon potentiel"},{nom:"Creas",note:6.5,description:"En progression"},{nom:"Ciblage",note:5.5,description:"A renforcer"},{nom:"Budget",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]}} },
-  { id:'s5',  num:'R2-005', bp:'Jordan',        clientName:'Coface',              clientWebsiteUrl:'https://coface.com',           canvaUrl:'https://www.canva.com/design/DAG_5FyK8Qk/edit', claapUrl:'', preAuditUrl:'', activeLevers:['Google Ads','Meta Ads'],                  pricing:'26 500 \u20ac',  dateR1:'2026-01-22', dateR2:'2026-02-05', status:'terminee',  createdAt:'2026-01-16T15:25:00Z' , contextSummary:{entreprise:"Leader mondial assurance-credit.",enjeux:"Acquisition paid sur les marches EU.",challenges:"Cycles de vente longs en B2B."}, analyses:{"Google Ads":{noteGlobale:6.5,lectureBusiness:"Les campagnes search captent du trafic mais le quality score est perfectible.",sousScores:[{nom:"Structure",note:7,description:"Bon potentiel"},{nom:"Mots-cles",note:6.5,description:"En progression"},{nom:"Annonces",note:5.5,description:"A renforcer"},{nom:"Landing pages",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"Meta Ads":{noteGlobale:7,lectureBusiness:"Meta genere du volume mais la qualification des leads reste un enjeu.",sousScores:[{nom:"Strategie",note:7,description:"Bon potentiel"},{nom:"Creas",note:6.5,description:"En progression"},{nom:"Ciblage",note:5.5,description:"A renforcer"},{nom:"Budget",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]}} },
-  { id:'s6',  num:'R2-006', bp:'Jordan',        clientName:'Join',                clientWebsiteUrl:'https://join.com',             canvaUrl:'https://www.canva.com/design/DAHENg7Me9I/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','CRO'],                              pricing:'6 000 \u20ac',   dateR1:'2026-02-12', dateR2:'2026-02-25', status:'terminee',  createdAt:'2026-02-09T19:02:00Z' , contextSummary:{entreprise:"Plateforme de recrutement gratuite.",enjeux:"SEO et conversion du site.",challenges:"Concurrence de Welcome to the Jungle."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"CRO":{noteGlobale:7,lectureBusiness:"Le parcours de conversion est trop long et manque de preuves sociales.",sousScores:[{nom:"Ergonomie",note:7,description:"Bon potentiel"},{nom:"Message",note:6.5,description:"En progression"},{nom:"CTA",note:5.5,description:"A renforcer"},{nom:"Reassurance",note:8,description:"Solide"},{nom:"Opportunites",note:6,description:"Correct"}]}} },
-  { id:'s7',  num:'R2-007', bp:'Jordan',        clientName:'Cafeyn',              clientWebsiteUrl:'https://cafeyn.co',            canvaUrl:'https://www.canva.com/design/DAHFgYxUqtk/edit', claapUrl:'', preAuditUrl:'', activeLevers:['Google Ads','LinkedIn Ads','CRO'],        pricing:'20 000 \u20ac',  dateR1:'2026-03-27', dateR2:'2026-04-10', status:'en_cours',  createdAt:'2026-03-23T11:53:00Z' , contextSummary:{entreprise:"Presse digitale illimitee B2B/B2C.",enjeux:"Acquisition B2B via paid et conversion.",challenges:"Concurrence de Readly."}, analyses:{"Google Ads":{noteGlobale:6.5,lectureBusiness:"Les campagnes search captent du trafic mais le quality score est perfectible.",sousScores:[{nom:"Structure",note:7,description:"Bon potentiel"},{nom:"Mots-cles",note:6.5,description:"En progression"},{nom:"Annonces",note:5.5,description:"A renforcer"},{nom:"Landing pages",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"LinkedIn Ads":{noteGlobale:7,lectureBusiness:"LinkedIn est pertinent pour la cible B2B avec un bon potentiel ABM.",sousScores:[{nom:"Strategie",note:7,description:"Bon potentiel"},{nom:"Creas",note:6.5,description:"En progression"},{nom:"Ciblage",note:5.5,description:"A renforcer"},{nom:"Budget",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"CRO":{noteGlobale:5.5,lectureBusiness:"Le parcours de conversion est trop long et manque de preuves sociales.",sousScores:[{nom:"Ergonomie",note:7,description:"Bon potentiel"},{nom:"Message",note:6.5,description:"En progression"},{nom:"CTA",note:5.5,description:"A renforcer"},{nom:"Reassurance",note:8,description:"Solide"},{nom:"Opportunites",note:6,description:"Correct"}]}} },
-  { id:'s8',  num:'R2-008', bp:'Enguerrand',    clientName:'Eleven VMS',          clientWebsiteUrl:'https://elevenvms.com',        canvaUrl:'https://www.canva.com/design/DAHGL6PPFS4/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','GEO'],                              pricing:'4 500 \u20ac',   dateR1:'2026-03-30', dateR2:'2026-04-14', status:'brouillon', createdAt:'2025-12-01T14:15:00Z' , contextSummary:{entreprise:"Logiciel de gestion de freelances.",enjeux:"Visibilite SEO et GEO en France.",challenges:"Marche domine par SAP Fieldglass."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"GEO":{noteGlobale:7,lectureBusiness:"Faible presence dans les reponses IA. Le contenu doit etre restructure pour les LLM.",sousScores:[{nom:"Presence IA",note:7,description:"Bon potentiel"},{nom:"Contenu optimise",note:6.5,description:"En progression"},{nom:"Citations",note:5.5,description:"A renforcer"},{nom:"Autorite",note:8,description:"Solide"},{nom:"Visibilite LLM",note:6,description:"Correct"}]}} },
-  { id:'s9',  num:'R2-009', bp:'Enguerrand',    clientName:'Marc Foujols',        clientWebsiteUrl:'https://marcfoujols.com',      canvaUrl:'https://www.canva.com/design/DAHEwYw8JvQ/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','Google Ads','CRO'],                 pricing:'11 500 \u20ac',  dateR1:'2026-03-17', dateR2:'2026-03-31', status:'terminee',  createdAt:'2026-03-12T09:20:00Z' , contextSummary:{entreprise:"Agence immobiliere de prestige Paris.",enjeux:"Visibilite digitale haut de gamme.",challenges:"Concurrence Barnes et Daniel Feau."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"Google Ads":{noteGlobale:7,lectureBusiness:"Les campagnes search captent du trafic mais le quality score est perfectible.",sousScores:[{nom:"Structure",note:7,description:"Bon potentiel"},{nom:"Mots-cles",note:6.5,description:"En progression"},{nom:"Annonces",note:5.5,description:"A renforcer"},{nom:"Landing pages",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"CRO":{noteGlobale:5.5,lectureBusiness:"Le parcours de conversion est trop long et manque de preuves sociales.",sousScores:[{nom:"Ergonomie",note:7,description:"Bon potentiel"},{nom:"Message",note:6.5,description:"En progression"},{nom:"CTA",note:5.5,description:"A renforcer"},{nom:"Reassurance",note:8,description:"Solide"},{nom:"Opportunites",note:6,description:"Correct"}]}} },
-  { id:'s10', num:'R2-010', bp:'Enguerrand',    clientName:'Waat',                clientWebsiteUrl:'https://waat.fr',              canvaUrl:'https://www.canva.com/design/DAG5sHfQ-Yw/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','Google Ads','Meta Ads'],            pricing:'64 000 \u20ac',  dateR1:'2025-11-18', dateR2:'2025-12-02', status:'terminee',  createdAt:'2025-11-10T14:12:00Z' , contextSummary:{entreprise:"Bornes de recharge pour coproprietes.",enjeux:"Capter la demande croissante en bornes.",challenges:"Concurrence forte de Zeplug et Driveco."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"Google Ads":{noteGlobale:7,lectureBusiness:"Les campagnes search captent du trafic mais le quality score est perfectible.",sousScores:[{nom:"Structure",note:7,description:"Bon potentiel"},{nom:"Mots-cles",note:6.5,description:"En progression"},{nom:"Annonces",note:5.5,description:"A renforcer"},{nom:"Landing pages",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]},"Meta Ads":{noteGlobale:5.5,lectureBusiness:"Meta genere du volume mais la qualification des leads reste un enjeu.",sousScores:[{nom:"Strategie",note:7,description:"Bon potentiel"},{nom:"Creas",note:6.5,description:"En progression"},{nom:"Ciblage",note:5.5,description:"A renforcer"},{nom:"Budget",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]}} },
-  { id:'s11', num:'R2-011', bp:'L\u00e9o',     clientName:'Expertimo',           clientWebsiteUrl:'https://expertimo.com',        canvaUrl:'https://www.canva.com/design/DAHFn3bqyOo/edit', claapUrl:'', preAuditUrl:'', activeLevers:['SEO','CRO','LinkedIn Ads'],               pricing:'13 000 \u20ac',  dateR1:'2026-03-28', dateR2:'2026-04-11', status:'en_cours',  createdAt:'2026-03-25T15:21:00Z' , contextSummary:{entreprise:"Reseau de mandataires immobiliers.",enjeux:"Recrutement de mandataires via digital.",challenges:"Concurrence IAD, Safti et MegAgence."}, analyses:{"SEO":{noteGlobale:6.5,lectureBusiness:"Le site a une base correcte mais manque de contenu editorial et de maillage interne.",sousScores:[{nom:"Visibilite",note:7,description:"Bon potentiel"},{nom:"Trafic",note:6.5,description:"En progression"},{nom:"Contenu",note:5.5,description:"A renforcer"},{nom:"Technique",note:8,description:"Solide"},{nom:"Autorite",note:6,description:"Correct"}]},"CRO":{noteGlobale:7,lectureBusiness:"Le parcours de conversion est trop long et manque de preuves sociales.",sousScores:[{nom:"Ergonomie",note:7,description:"Bon potentiel"},{nom:"Message",note:6.5,description:"En progression"},{nom:"CTA",note:5.5,description:"A renforcer"},{nom:"Reassurance",note:8,description:"Solide"},{nom:"Opportunites",note:6,description:"Correct"}]},"LinkedIn Ads":{noteGlobale:5.5,lectureBusiness:"LinkedIn est pertinent pour la cible B2B avec un bon potentiel ABM.",sousScores:[{nom:"Strategie",note:7,description:"Bon potentiel"},{nom:"Creas",note:6.5,description:"En progression"},{nom:"Ciblage",note:5.5,description:"A renforcer"},{nom:"Budget",note:8,description:"Solide"},{nom:"Performance",note:6,description:"Correct"}]}} },
-];
-
 /* ---------------------------------------------------------------------------
    CONFIGURATION DES STATUTS
    Definit l'apparence (label, couleur, fond) de chaque statut de presentation.
@@ -352,12 +314,7 @@ const STATUS_CYCLE = ['brouillon','en_cours','terminee'];
    FONCTIONS UTILITAIRES
    --------------------------------------------------------------------------- */
 
-// Charge les donnees depuis le localStorage. Retourne null si absent ou corrompu.
-function load()          { try { const r=localStorage.getItem(STORAGE_KEY); return r?JSON.parse(r):null; } catch{return null;} }
-
-// Sauvegarde les donnees dans le localStorage (serialisation JSON).
-// Appelee apres chaque modification (ex: changement de statut).
-function persist(d)      { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }
+// Persistence now handled by api.js — no localStorage
 
 // Formate une date ISO en format court francais (ex: "3 avr.")
 function fmtDate(iso)    { return new Date(iso).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}); }
@@ -423,20 +380,20 @@ function App() {
       Genere un nouvel ID unique (prefixe 'd' + timestamp base36) et un numero
       sequentiel (R2-XXX) base sur la taille actuelle du tableau.
       La copie est inseree en tete du tableau (la plus recente en premier). */
-  function duplicatePres(p) {
-    const dup = {...p, id:'d'+Date.now().toString(36), num:'R2-'+(pres.length+1).toString().padStart(3,'0'), status:'brouillon', createdAt:new Date().toISOString()};
-    const updated = [dup, ...pres];
-    setPres(updated); persist(updated);
-    setOpenMenu(null); // Ferme le menu burger apres l'action
+  async function duplicatePres(p) {
+    const result = await apiDuplicatePresentation(p.id);
+    const d = await apiFetchPresentations();
+    setPres(d);
+    setOpenMenu(null);
   }
 
   /** Supprime une presentation apres confirmation utilisateur.
       Le confirm() natif empeche les suppressions accidentelles (surtout
       utile car le clic sur le menu burger est proche du clic sur la ligne). */
-  function deletePres(id) {
+  async function deletePres(id) {
     if(!confirm('Supprimer cette présentation ?')) return;
-    const updated = pres.filter(p=>p.id!==id);
-    setPres(updated); persist(updated);
+    await apiDeletePresentation(id);
+    setPres(prev => prev.filter(p=>p.id!==id));
     setOpenMenu(null);
   }
 
@@ -459,21 +416,21 @@ function App() {
         Migration des photos : si un BP dans les settings n'a pas de photo mais
         que la constante BPS en a une (ajoutee apres), on la merge automatiquement. */
   useEffect(() => {
-    let d = load();
-    if (!d || d.length===0) { d=SEED; persist(d); }
-    setPres(d);
-    try {
-      const s = JSON.parse(localStorage.getItem('master_r2_settings')||'null');
-      if (s?.currentUser) {
-        setCU(s.currentUser);
-        // Cherche le BP dans les settings, puis merge la photo depuis BPS si manquante
-        let bp = (s.bps||[]).find(b=>b.name===s.currentUser);
-        const bpDef = BPS.find(b=>b.name===s.currentUser);
-        if(bp && bpDef && bpDef.photo && !bp.photo) bp = {...bp, photo:bpDef.photo};
-        if(!bp && bpDef) bp = bpDef;
-        setCUBp(bp||null);
-      }
-    } catch {}
+    (async () => {
+      try {
+        const d = await apiFetchPresentations();
+        setPres(d);
+        const bps = await apiFetchBPs();
+        BPS.length = 0; BPS.push(...bps);
+        // Settings: currentUser still from localStorage for now
+        const s = JSON.parse(localStorage.getItem('master_r2_settings')||'null');
+        if (s?.currentUser) {
+          setCU(s.currentUser);
+          let bp = BPS.find(b=>b.name===s.currentUser);
+          setCUBp(bp||null);
+        }
+      } catch (err) { console.error('Init error:', err); }
+    })();
   }, []);
 
   // --- Filtrage memoize ---
@@ -495,12 +452,12 @@ function App() {
   // e.stopPropagation() empeche le clic de naviguer vers la page de detail.
   function cycleStatus(id, e) {
     e.stopPropagation();
-    const updated = pres.map(p => {
-      if (p.id !== id) return p;
-      const i = STATUS_CYCLE.indexOf(p.status);
-      return { ...p, status: STATUS_CYCLE[(i+1)%STATUS_CYCLE.length] };
-    });
-    setPres(updated); persist(updated);
+    const p = pres.find(x=>x.id===id);
+    if (!p) return;
+    const i = STATUS_CYCLE.indexOf(p.status);
+    const newStatus = STATUS_CYCLE[(i+1)%STATUS_CYCLE.length];
+    apiUpdateStatus(id, newStatus);
+    setPres(prev => prev.map(x => x.id===id ? {...x, status:newStatus} : x));
   }
 
   // --- Compteurs pour la barre superieure et les filtres ---

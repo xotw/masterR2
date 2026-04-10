@@ -231,6 +231,7 @@
 </head>
 <body>
 <div id="root"></div>
+<script src="api.js"></script>
 <script type="text/babel">
 /* ═══════════════════════════════════════════════════════════════════════════
    JAVASCRIPT / REACT — Logique applicative
@@ -242,7 +243,7 @@ const { useState, useReducer, useContext, createContext, useRef, useEffect, useC
    Incrémentée à chaque changement de structure du seed (v7→v8, etc.)
    pour forcer le rechargement des données depuis le SEED d'index.html.
    Partagée entre index.html, nouveau.html, parametres.html. */
-const STORAGE_KEY = 'master_r2_v12';
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONSTANTES MÉTIER — Leviers, slides, couleurs
@@ -326,7 +327,7 @@ const SECTIONS = [
   { id:'next_step',     label:'Next step',               thumbs:['slides-thumbs/96-next-step-titre.png','slides-thumbs/97-lancement.png','slides-thumbs/98-fin.png'] },
 ];
 /* Liste des Business Partners (utilisée dans le formulaire Step 1) */
-const BPS = ['Jordan','Enguerrand','Léo','Pierre-Arnaud'];
+let BPS = ['Jordan','Enguerrand','Léo','Pierre-Arnaud'];
 
 /* Définition des 4 étapes du workflow — affichées dans la sidebar */
 const STEPS = [
@@ -363,23 +364,18 @@ function initials(name) { return name.split(/[-\s]/).map(p=>p[0]).join('').toUpp
    clé STORAGE_KEY. Le seed initial est créé par index.html.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/** Charge toutes les présentations depuis localStorage */
-function loadAll() { try{const r=localStorage.getItem(STORAGE_KEY);return r?JSON.parse(r):[];}catch{return[];} }
-
 /** Charge les paramètres utilisateur (profil BP connecté, etc.) */
 function loadSettings() { try{const r=localStorage.getItem('master_r2_settings');return r?JSON.parse(r):null;}catch{return null;} }
 
-/** Sauvegarde toutes les présentations dans localStorage */
-function saveAll(a) { localStorage.setItem(STORAGE_KEY,JSON.stringify(a)); }
-
-/** Insère ou met à jour une présentation dans le tableau localStorage.
-    Merge les champs passés avec les champs existants ({...ancien, ...nouveau}). */
+// upsert now uses the API — fire-and-forget for auto-saves
 function upsert(p) {
-  const all=loadAll(), i=all.findIndex(x=>x.id===p.id);
-  const now=new Date().toISOString();
-  if(i>=0) all[i]={...all[i],...p,updatedAt:now};
-  else all.unshift({...p,createdAt:now,updatedAt:now});
-  saveAll(all);
+  apiUpsert(p).then(result => {
+    // If this was a new presentation, update the ID to the DB integer
+    if (result && result.id && p.id !== result.id) {
+      p.id = result.id;
+      p.num = result.num;
+    }
+  }).catch(err => console.error('upsert error:', err));
 }
 
 /** Copie du texte dans le presse-papier (avec fallback pour les anciens navigateurs) */
@@ -2023,10 +2019,23 @@ function App() {
      2. Pas d'id : nouvelle prez. Pre-remplit le BP avec l'utilisateur connecte (si defini)
         pour eviter au BP de se re-selectionner a chaque creation. */
   useEffect(()=>{
-    const id=new URLSearchParams(window.location.search).get('id');
-    if(id){const all=loadAll(),p=all.find(x=>x.id===id);if(p){dispatch({t:'LOAD',d:p});setIsExisting(true);}return;}
-    const s=loadSettings();
-    if(s&&s.currentUser) dispatch({t:'SET',k:'bp',v:s.currentUser});
+    (async () => {
+      try {
+        // Load BPs from API
+        const bps = await apiFetchBPs();
+        BPS.length = 0;
+        BPS.push(...bps.map(b => b.name));
+
+        const id = new URLSearchParams(window.location.search).get('id');
+        if (id) {
+          const p = await apiFetchPresentation(id);
+          if (p) { dispatch({t:'LOAD',d:p}); setIsExisting(true); }
+          return;
+        }
+        const s = loadSettings();
+        if (s && s.currentUser) dispatch({t:'SET',k:'bp',v:s.currentUser});
+      } catch (err) { console.error('Init error:', err); }
+    })();
   },[]);
 
   /* ── Auto-save : persiste currentStep dans localStorage ──────────────────

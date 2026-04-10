@@ -244,6 +244,7 @@
 <body>
 <!-- Point de montage React — l'application entière est rendue dans ce div -->
 <div id="root"></div>
+<script src="api.js"></script>
 <script type="text/babel">
 /* =================================================================
    APPLICATION PARAMETRES — Bulldozer R2
@@ -268,7 +269,6 @@ const { useState, useEffect, useCallback } = React;
      utilisent 'master_r2_v12'. En cas de versioning, vérifier la cohérence.
    SETTINGS_KEY : clé dédiée aux paramètres (currentUser, mcps, bps). Partagée
      en lecture avec toutes les autres pages (aide.html, index.html, nouveau.html). */
-const STORAGE_KEY    = 'master_r2_v12';
 const SETTINGS_KEY   = 'master_r2_settings';
 
 /* Mapping des icônes par levier d'acquisition — utilisé dans la nav pour identifier
@@ -320,16 +320,13 @@ const COLOR_OPTIONS = ['#D4FF00','#60A5FA','#F97316','#A78BFA','#34D399','#FB718
    Lecture/écriture sécurisée avec try/catch pour gérer les erreurs de parsing.
    Retourne null ou un tableau vide en cas d'erreur pour éviter les crashs. */
 
-/** Charge les paramètres depuis localStorage, retourne null si absents ou corrompus */
-function loadSettings() {
+/** Charge les paramètres locaux (currentUser) depuis localStorage */
+function loadLocalSettings() {
   try { const r = localStorage.getItem(SETTINGS_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
 }
 
-/** Sauvegarde les paramètres dans localStorage au format JSON */
-function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
-
-/** Charge la liste des présentations existantes depuis localStorage */
-function loadPres() { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : []; } catch { return []; } }
+/** Sauvegarde les paramètres locaux (currentUser) dans localStorage */
+function saveLocalSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
 
 /** Formate une date ISO en format court français (ex: "9 avr.") */
 function fmtDate(iso) { return new Date(iso).toLocaleDateString('fr-FR', { day:'numeric', month:'short' }); }
@@ -373,6 +370,7 @@ function App() {
   const [editPhotoUrl, setEditPhotoUrl] = useState('');
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState('');
+  const [recentPres, setRecentPres] = useState([]);
 
   /* Affiche un message toast pendant 2 secondes puis le masque automatiquement.
      Mémorisé avec useCallback pour éviter les re-créations inutiles. */
@@ -383,29 +381,36 @@ function App() {
      crée les valeurs par défaut : aucun utilisateur sélectionné, outils MCP primaires
      activés, et liste de BPs par défaut. */
   useEffect(() => {
-    let s = loadSettings();
-    if (s) {
-      /* Migration des photos : les URLs de photos LinkedIn ont ete ajoutees a DEFAULT_BPS
-         apres la premiere version de l'app. Pour les utilisateurs existants qui ont deja des BPs
-         en localStorage SANS photo, on merge automatiquement la photo depuis DEFAULT_BPS.
-         Condition : le BP existe dans DEFAULT_BPS, a une photo, ET le BP local n'en a pas encore. */
-      if(s.bps) {
-        s.bps = s.bps.map(bp => {
-          const def = DEFAULT_BPS.find(d => d.name === bp.name);
-          return def && def.photo && !bp.photo ? {...bp, photo: def.photo} : bp;
-        });
-        saveSettings(s);
+    (async () => {
+      try {
+        // Load BPs from API
+        const bps = await apiFetchBPs();
+        // Load MCP settings from API
+        const apiSettings = await apiFetchSettings();
+        // Load currentUser from localStorage (still local)
+        const local = loadLocalSettings();
+
+        // Load recent presentations from API
+        const pres = await apiFetchPresentations();
+        setRecentPres(pres.slice(0, 6));
+
+        const s = {
+          currentUser: local?.currentUser || null,
+          mcps: apiSettings.mcps || Object.fromEntries(MCP_TOOLS.map(t => [t.id, t.primary])),
+          bps: bps,
+        };
+        setSettings(s);
+      } catch (err) {
+        console.error('Settings init error:', err);
+        // Fallback to defaults
+        const defaults = {
+          currentUser: null,
+          mcps: Object.fromEntries(MCP_TOOLS.map(t => [t.id, t.primary])),
+          bps: DEFAULT_BPS,
+        };
+        setSettings(defaults);
       }
-      setSettings(s);
-    } else {
-      const defaults = {
-        currentUser: null,
-        mcps: Object.fromEntries(MCP_TOOLS.map(t => [t.id, t.primary])),
-        bps: DEFAULT_BPS,
-      };
-      saveSettings(defaults);
-      setSettings(defaults);
-    }
+    })();
   }, []);
 
   /* ── Mise à jour des paramètres ──
@@ -414,7 +419,14 @@ function App() {
   function update(patch) {
     const next = { ...settings, ...patch };
     setSettings(next);
-    saveSettings(next);
+    // Persist currentUser to localStorage
+    if (patch.currentUser !== undefined) {
+      saveLocalSettings({ currentUser: next.currentUser });
+    }
+    // Persist MCP toggles to API
+    if (patch.mcps) {
+      apiUpdateSettings({ mcps: patch.mcps }).catch(err => console.error('Settings save error:', err));
+    }
   }
 
   /* Active ou désactive un outil MCP par son identifiant.
@@ -444,8 +456,11 @@ function App() {
     const tc = ['#D4FF00','#F97316','#34D399','#FBBF24'].includes(newBpColor) ? '#000' : '#fff';
     const bp = { name: newBpName.trim(), role: newBpRole, color: newBpColor, tc };
     if(newBpPhoto.trim()) bp.photo = newBpPhoto.trim();
-    update({ bps: [...settings.bps, bp] });
-    setNewBpName(''); setNewBpPhoto(''); showToast(`${bp.name} ajouté !`);
+    apiCreateBP(bp).then(savedBp => {
+      setSettings(s => ({...s, bps:[savedBp,...s.bps]}));
+      showToast(`${bp.name} ajouté`);
+    }).catch(err => console.error('Add BP error:', err));
+    setNewBpName(''); setNewBpPhoto('');
   }
 
   /** Met à jour la photo d'un BP existant.
@@ -453,9 +468,16 @@ function App() {
       Accessible via le bouton "Modifier la photo" / "Ajouter une photo" dans la liste d'équipe.
       Après validation, ferme le formulaire inline (editPhotoId=null) et affiche un toast. */
   function updateBpPhoto(name, url) {
-    update({ bps: settings.bps.map(bp => bp.name===name ? {...bp, photo:url.trim()||undefined} : bp) });
+    const targetBp = settings.bps.find(bp => bp.name === name);
+    const photoVal = url.trim() || undefined;
+    // Update locally
+    setSettings(s => ({...s, bps: s.bps.map(bp => bp.name===name ? {...bp, photo:photoVal} : bp)}));
     setEditPhotoId(null); setEditPhotoUrl('');
     showToast('Photo mise à jour !');
+    // Persist to API
+    if (targetBp && targetBp._id) {
+      apiUpdateBP(targetBp._id, { photo: photoVal || null }).catch(err => console.error('Update BP photo error:', err));
+    }
   }
 
   /* ── Suppression d'un Business Partner ──
@@ -466,11 +488,6 @@ function App() {
     else update({ bps: settings.bps.filter(b => b.name !== name) });
     showToast('Supprimé');
   }
-
-  /* Charge les présentations pour afficher les plus récentes dans la nav latérale.
-     Triées par date de création décroissante, limitées aux 6 dernières. */
-  const pres = loadPres();
-  const recent = [...pres].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 6);
 
   /* Garde de rendu : tant que les paramètres ne sont pas chargés, on n'affiche rien
      pour éviter un flash de contenu vide ou des erreurs d'accès aux propriétés. */
@@ -522,18 +539,18 @@ function App() {
         <div className="nav-section">Récent</div>
         <div className="nav-list">
           {/* Affiche les 6 présentations les plus récentes avec icône du levier et date */}
-          {recent.map(p => (
+          {recentPres.map(p => (
             <div key={p.id} className="nav-item" onClick={()=>window.location.href=`nouveau.html?id=${p.id}`}>
               <div className="nav-item-left">
                 {/* Icône du premier levier actif de la présentation */}
-                <span style={{fontSize:17}}>{LEVER_ICONS[p.activeLevers[0]]||'📋'}</span>
+                <span style={{fontSize:17}}>{LEVER_ICONS[p.activeLevers?.[0]]||'📋'}</span>
                 <span className="nav-item-name">{p.clientName}</span>
               </div>
               <span style={{fontSize:14,color:'var(--text-3)',flexShrink:0,marginLeft:4}}>{fmtDate(p.createdAt)}</span>
             </div>
           ))}
           {/* Message affiché quand aucune présentation n'existe encore */}
-          {recent.length===0 && <div style={{fontSize:17,color:'var(--text-3)',padding:'8px 10px'}}>Aucune présentation</div>}
+          {recentPres.length===0 && <div style={{fontSize:17,color:'var(--text-3)',padding:'8px 10px'}}>Aucune présentation</div>}
         </div>
 
         {/* Pied de navigation : liens utilitaires et profil connecté */}
